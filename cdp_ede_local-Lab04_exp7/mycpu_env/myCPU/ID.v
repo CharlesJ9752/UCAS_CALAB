@@ -30,6 +30,9 @@ module ID (
         if(~resetn) begin
             id_valid <= 1'b0;
         end
+        else if(en_brch) begin
+            id_valid <= 1'b0;
+        end
         else if(id_allowin) begin
             id_valid <= if_id_valid;
         end
@@ -232,5 +235,8 @@ module ID (
         gr_we, mem_we, res_from_mem, 
         alu_op, alu_src1, alu_src2,
         dest, rkd_value, id_inst, id_pc
+    };
+    assign id_if_bus = {
+        en_brch, brch_addr
     };
 endmodule

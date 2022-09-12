@@ -34,6 +34,9 @@ module IF (
         else if(if_allowin)begin
             if_valid <= 1'b1;
         end
+        else if(en_brch)begin
+            if_valid <= 1'b0;
+        end
     end
     assign  if_id_valid = if_ready_go & if_valid;
     assign  if_id_bus = { if_pc, if_inst };
@@ -51,7 +54,7 @@ module IF (
     end
     //取指
     assign  inst_sram_en = if_allowin;
-    assign  inst_sram_addr = if_pc;
+    assign  inst_sram_addr = if_nextpc;
     assign  if_inst = inst_sram_rdata;
     assign  inst_sram_we = 4'b0;
     assign  inst_sram_wdata = 32'b0;

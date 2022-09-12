@@ -26,8 +26,8 @@ module WB (
     wire    [  4:0] rf_waddr;
     wire    [ 31:0] rf_wdata;
     wire    [  4:0] dest;
-
-
+    assign wb_ready_go = 1'b1;
+    assign wb_allowin = wb_ready_go | ~wb_valid;
     always @(posedge clk ) begin
         if (~resetn) begin
             wb_valid <= 1'b0;
