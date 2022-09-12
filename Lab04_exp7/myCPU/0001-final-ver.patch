@@ -1,0 +1,907 @@
+From c3046230d268ab318de4183fbac7c446944b2b0e Mon Sep 17 00:00:00 2001
+From: CharlesJ9752 <1499695378@qq.com>
+Date: Mon, 12 Sep 2022 12:56:40 +0800
+Subject: [PATCH] final ver
+
+---
+ Lab04_exp7/myCPU/EXE.v       |  73 ++++++++
+ Lab04_exp7/myCPU/ID.v        | 242 ++++++++++++++++++++++++++
+ Lab04_exp7/myCPU/IF.v        |  61 +++++++
+ Lab04_exp7/myCPU/MEM.v       |  52 ++++++
+ Lab04_exp7/myCPU/WB.v        |  57 ++++++
+ Lab04_exp7/myCPU/mycpu_top.v | 329 +++++++++--------------------------
+ Lab04_exp7/myCPU/tools.v     |   2 +-
+ 7 files changed, 567 insertions(+), 249 deletions(-)
+ create mode 100644 Lab04_exp7/myCPU/EXE.v
+ create mode 100644 Lab04_exp7/myCPU/ID.v
+ create mode 100644 Lab04_exp7/myCPU/IF.v
+ create mode 100644 Lab04_exp7/myCPU/MEM.v
+ create mode 100644 Lab04_exp7/myCPU/WB.v
+
+diff --git a/Lab04_exp7/myCPU/EXE.v b/Lab04_exp7/myCPU/EXE.v
+new file mode 100644
+index 0000000..af27b34
+--- /dev/null
++++ b/Lab04_exp7/myCPU/EXE.v
+@@ -0,0 +1,73 @@
++//运行alu，写存储器
++module EXE (
++    input           clk,
++    input           resetn,
++    //与ID阶段
++    output          exe_allowin,
++    input           id_exe_valid,
++    input   [179:0] id_exe_bus,
++    //与MEM阶段
++    output          exe_mem_valid,
++    input           mem_allowin,
++    output  [102:0] exe_mem_bus,
++    //与数据存储器
++    output          data_sram_en,
++    output  [ 3:0]  data_sram_we,
++    output  [31:0]  data_sram_addr,
++    output  [31:0]  data_sram_wdata
++);
++    //信号定义
++    reg             exe_valid;
++    wire            exe_ready_go;
++    wire    [ 31:0] exe_inst;
++    wire    [ 31:0] exe_pc;
++    reg     [179:0] id_exe_bus_vld;
++    
++    assign  exe_ready_go = 1'b1;
++    assign  exe_mem_valid = exe_ready_go & exe_valid;
++    assign  exe_allowin = exe_mem_valid & mem_allowin | ~exe_valid;
++    always @(posedge clk ) begin
++        if (~resetn) begin
++            exe_valid <= 1'b0;
++        end
++        else if(exe_allowin) begin
++            exe_valid <= id_exe_valid;
++        end
++    end
++    always @(posedge clk ) begin
++        if (id_exe_valid & exe_allowin) begin
++            id_exe_bus_vld <= id_exe_bus; 
++        end
++    end
++    //接bus
++    wire            gr_we;
++    wire            mem_we;
++    wire            res_from_mem;
++    wire    [11:0]  alu_op;
++    wire    [31:0]  alu_src1;
++    wire    [31:0]  alu_src2;
++    wire    [ 4:0]  dest;
++    wire    [31:0]  rkd_value;
++    assign {
++        gr_we, mem_we, res_from_mem,
++        alu_op, alu_src1, alu_src2,
++        dest, rkd_value, exe_inst, exe_pc
++    } = id_exe_bus_vld;
++    //运行alu
++    wire    [31:0]  alu_result;
++    alu my_alu (
++        .alu_op(alu_op),
++        .alu_src1(alu_src1),
++        .alu_src2(alu_src2),
++        .alu_result(alu_result)
++    );
++    //与数据存储器
++    assign  data_sram_en = 1'b1;
++    assign  data_sram_we = {4{mem_we}};
++    assign  data_sram_addr = alu_result;
++    assign  data_sram_wdata = rkd_value;
++    assign exe_mem_bus = {
++        gr_we, res_from_mem, dest,
++        exe_pc, exe_inst, alu_result
++    };
++endmodule
+\ No newline at end of file
+diff --git a/Lab04_exp7/myCPU/ID.v b/Lab04_exp7/myCPU/ID.v
+new file mode 100644
+index 0000000..12c30d7
+--- /dev/null
++++ b/Lab04_exp7/myCPU/ID.v
+@@ -0,0 +1,242 @@
++//译码，生成操作数，写回寄存器堆
++module ID (
++    input           clk,
++    input           resetn,
++    //与IF阶段
++    input           if_id_valid,
++    output          id_allowin,
++    input   [63:0]  if_id_bus,//pc+inst
++    output  [32:0]  id_if_bus,//en_brch+brch_addr
++    //与EXE阶段
++    input           exe_allowin,
++    output          id_exe_valid,
++    output  [179:0] id_exe_bus,
++    //来自WB阶段
++    input   [37:0]  wb_id_bus
++);
++    //信号定义
++    reg             id_valid;//指令在id中
++    wire            id_ready_go;//可以去下个阶段
++    wire    [31:0]  id_inst;
++    wire    [31:0]  id_pc;
++    wire            en_brch;
++    wire    [31:0]  brch_addr;
++    reg     [63:0]  if_id_bus_vld;
++
++    assign id_ready_go = 1'b1;
++    assign id_exe_valid = id_ready_go & id_valid;
++    assign id_allowin = id_exe_valid & exe_allowin | ~id_valid;
++    always @(posedge clk ) begin
++        if(~resetn) begin
++            id_valid <= 1'b0;
++        end
++        else if(en_brch) begin
++            id_valid <= 1'b0;
++        end
++        else if(id_allowin) begin
++            id_valid <= if_id_valid;
++        end
++    end
++    always @(posedge clk ) begin
++        if(if_id_valid & id_allowin)begin
++            if_id_bus_vld <= if_id_bus;
++        end
++    end
++    assign {id_pc, id_inst} = if_id_bus_vld;
++    //译码
++    wire [ 5:0] op_31_26;
++    wire [ 3:0] op_25_22;
++    wire [ 1:0] op_21_20;
++    wire [ 4:0] op_19_15;
++    wire [ 4:0] rd;
++    wire [ 4:0] rj;
++    wire [ 4:0] rk;
++    wire [11:0] i12;
++    wire [19:0] i20;
++    wire [15:0] i16;
++    wire [25:0] i26;
++
++    wire [63:0] op_31_26_d;
++    wire [15:0] op_25_22_d;
++    wire [ 3:0] op_21_20_d;
++    wire [31:0] op_19_15_d;
++
++    wire        inst_add_w;
++    wire        inst_sub_w;
++    wire        inst_slt;
++    wire        inst_sltu;
++    wire        inst_nor;
++    wire        inst_and;
++    wire        inst_or;
++    wire        inst_xor;
++    wire        inst_slli_w;
++    wire        inst_srli_w;
++    wire        inst_srai_w;
++    wire        inst_addi_w;
++    wire        inst_ld_w;
++    wire        inst_st_w;
++    wire        inst_jirl;
++    wire        inst_b;
++    wire        inst_bl;
++    wire        inst_beq;
++    wire        inst_bne;
++    wire        inst_lu12i_w;
++
++    wire        need_ui5;
++    wire        need_si12;
++    wire        need_si16;
++    wire        need_si20;
++    wire        need_si26;
++    wire        src2_is_4;
++
++    wire [ 4:0] rf_raddr1;
++    wire [31:0] rf_rdata1;
++    wire [ 4:0] rf_raddr2;
++    wire [31:0] rf_rdata2;
++    wire        rf_we   ;
++    wire [ 4:0] rf_waddr;
++    wire [31:0] rf_wdata;
++    wire [11:0] alu_op;
++    wire [31:0] alu_src1   ;
++    wire [31:0] alu_src2   ;
++    wire [31:0] alu_result ;
++
++    wire [31:0] mem_result;
++    wire [31:0] final_result;
++    wire [4:0]  dest;
++
++    wire [31:0] imm;
++    wire [31:0] rj_value;
++    wire [31:0] rkd_value;
++    wire [31:0] br_offs;
++
++    assign op_31_26  = id_inst[31:26];
++    assign op_25_22  = id_inst[25:22];
++    assign op_21_20  = id_inst[21:20];
++    assign op_19_15  = id_inst[19:15];
++
++    assign rd   = id_inst[ 4: 0];
++    assign rj   = id_inst[ 9: 5];
++    assign rk   = id_inst[14:10];
++
++    assign i12  = id_inst[21:10];
++    assign i20  = id_inst[24: 5];
++    assign i16  = id_inst[25:10];
++    assign i26  = {id_inst[ 9: 0], id_inst[25:10]};
++
++    decoder_6_64 u_dec0(.in(op_31_26 ), .out(op_31_26_d ));
++    decoder_4_16 u_dec1(.in(op_25_22 ), .out(op_25_22_d ));
++    decoder_2_4  u_dec2(.in(op_21_20 ), .out(op_21_20_d ));
++    decoder_5_32 u_dec3(.in(op_19_15 ), .out(op_19_15_d ));
++
++    assign inst_add_w  = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h00];
++    assign inst_sub_w  = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h02];
++    assign inst_slt    = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h04];
++    assign inst_sltu   = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h05];
++    assign inst_nor    = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h08];
++    assign inst_and    = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h09];
++    assign inst_or     = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h0a];
++    assign inst_xor    = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h0b];
++    assign inst_slli_w = op_31_26_d[6'h00] & op_25_22_d[4'h1] & op_21_20_d[2'h0] & op_19_15_d[5'h01];
++    assign inst_srli_w = op_31_26_d[6'h00] & op_25_22_d[4'h1] & op_21_20_d[2'h0] & op_19_15_d[5'h09];
++    assign inst_srai_w = op_31_26_d[6'h00] & op_25_22_d[4'h1] & op_21_20_d[2'h0] & op_19_15_d[5'h11];
++    assign inst_addi_w = op_31_26_d[6'h00] & op_25_22_d[4'ha];
++    assign inst_ld_w   = op_31_26_d[6'h0a] & op_25_22_d[4'h2];
++    assign inst_st_w   = op_31_26_d[6'h0a] & op_25_22_d[4'h6];
++    assign inst_jirl   = op_31_26_d[6'h13];
++    assign inst_b      = op_31_26_d[6'h14];
++    assign inst_bl     = op_31_26_d[6'h15];
++    assign inst_beq    = op_31_26_d[6'h16];
++    assign inst_bne    = op_31_26_d[6'h17];
++    assign inst_lu12i_w= op_31_26_d[6'h05] & ~id_inst[25];
++
++    assign alu_op[ 0] = inst_add_w | inst_addi_w | inst_ld_w | inst_st_w
++                        | inst_jirl | inst_bl;
++    assign alu_op[ 1] = inst_sub_w;
++    assign alu_op[ 2] = inst_slt;
++    assign alu_op[ 3] = inst_sltu;
++    assign alu_op[ 4] = inst_and;
++    assign alu_op[ 5] = inst_nor;
++    assign alu_op[ 6] = inst_or;
++    assign alu_op[ 7] = inst_xor;
++    assign alu_op[ 8] = inst_slli_w;
++    assign alu_op[ 9] = inst_srli_w;
++    assign alu_op[10] = inst_srai_w;
++    assign alu_op[11] = inst_lu12i_w;
++
++    assign need_ui5   =  inst_slli_w | inst_srli_w | inst_srai_w;
++    assign need_si12  =  inst_addi_w | inst_ld_w | inst_st_w;
++    assign need_si16  =  inst_jirl | inst_beq | inst_bne;
++    assign need_si20  =  inst_lu12i_w;
++    assign need_si26  =  inst_b | inst_bl;
++    assign src2_is_4  =  inst_jirl | inst_bl;
++
++    assign imm = src2_is_4 ? 32'h4                      :
++                need_si20 ? {i20[19:0], 12'b0}         :
++    /*need_ui5 || need_si12*/{{20{i12[11]}}, i12[11:0]} ;
++
++    assign br_offs = need_si26 ? {{ 4{i26[25]}}, i26[25:0], 2'b0} :
++                                {{14{i16[15]}}, i16[15:0], 2'b0} ;
++
++    assign jirl_offs = {{14{i16[15]}}, i16[15:0], 2'b0};
++
++    assign src_reg_is_rd = inst_beq | inst_bne | inst_st_w;
++
++    assign src1_is_pc    = inst_jirl | inst_bl;
++
++    assign src2_is_imm   = inst_slli_w |
++                        inst_srli_w |
++                        inst_srai_w |
++                        inst_addi_w |
++                        inst_ld_w   |
++                        inst_st_w   |
++                        inst_lu12i_w|
++                        inst_jirl   |
++                        inst_bl     ;
++
++    assign res_from_mem  = inst_ld_w;
++    assign dst_is_r1     = inst_bl;
++    assign gr_we         = ~inst_st_w & ~inst_beq & ~inst_bne & ~inst_b;
++    assign mem_we        = inst_st_w;
++    assign dest          = dst_is_r1 ? 5'd1 : rd;
++
++    assign rf_raddr1 = rj;
++    assign rf_raddr2 = src_reg_is_rd ? rd :rk;
++    assign {
++        rf_we, rf_waddr, rf_wdata
++    } = wb_id_bus;
++    regfile u_regfile(
++        .clk    (clk      ),
++        .raddr1 (rf_raddr1),
++        .rdata1 (rf_rdata1),
++        .raddr2 (rf_raddr2),
++        .rdata2 (rf_rdata2),
++        .we     (rf_we    ),
++        .waddr  (rf_waddr ),
++        .wdata  (rf_wdata )
++        );
++
++    assign rj_value  = rf_rdata1;
++    assign rkd_value = rf_rdata2;
++
++    assign rj_eq_rd = (rj_value == rkd_value);
++    assign en_brch = (   inst_beq  &&  rj_eq_rd
++                    || inst_bne  && !rj_eq_rd
++                    || inst_jirl
++                    || inst_bl
++                    || inst_b
++    ) &id_valid;
++    assign brch_addr = (inst_beq || inst_bne || inst_bl || inst_b) ? (id_pc + br_offs) :
++                                                    /*inst_jirl*/ (rj_value + jirl_offs);
++    assign ds_to_fs_bus={en_brch,brch_addr};
++    assign alu_src1 = src1_is_pc  ? id_pc : rj_value;
++    assign alu_src2 = src2_is_imm ? imm : rkd_value;
++    assign id_exe_bus = {
++        gr_we, mem_we, res_from_mem, 
++        alu_op, alu_src1, alu_src2,
++        dest, rkd_value, id_inst, id_pc
++    };
++    assign id_if_bus = {
++        en_brch, brch_addr
++    };
++endmodule
+\ No newline at end of file
+diff --git a/Lab04_exp7/myCPU/IF.v b/Lab04_exp7/myCPU/IF.v
+new file mode 100644
+index 0000000..fe4c1b8
+--- /dev/null
++++ b/Lab04_exp7/myCPU/IF.v
+@@ -0,0 +1,61 @@
++//取指，更新pc
++module IF (
++    input           clk,
++    input           resetn,
++    //与ID阶段
++    input           id_allowin,
++    output          if_id_valid,
++    output  [63:0]  if_id_bus,//if_pc+if_inst
++    input   [32:0]  id_if_bus,//en_brch+brch_addr
++    //与指令存储器
++    output          inst_sram_en,
++    output  [3:0]   inst_sram_we,
++    output  [31:0]  inst_sram_addr,
++    output  [31:0]  inst_sram_wdata,
++    input   [31:0]  inst_sram_rdata
++);
++    //信号定义
++    reg             if_valid;//有指令在if中
++    wire            if_ready_go;//指令可以去下一个阶段
++    wire            if_allowin;//可接受
++    wire            en_brch;//使能跳转
++    reg     [31:0]  if_pc;//if阶段的pc值
++    wire    [31:0]  if_inst;//if阶段的指令
++    wire    [31:0]  if_nextpc;//下一个pc
++    wire    [31:0]  brch_addr;//若跳转的pc
++    wire    [31:0]  seq_pc;//若顺序的pc
++
++    assign  if_ready_go = 1'b1;
++    assign  if_allowin = ~resetn | if_ready_go & id_allowin;//还没开始，或当前指令可以去下一步
++    always @(posedge clk ) begin
++        if(~resetn)begin
++            if_valid <= 1'b0;
++        end
++        else if(if_allowin)begin
++            if_valid <= 1'b1;
++        end
++        else if(en_brch)begin
++            if_valid <= 1'b0;
++        end
++    end
++    assign  if_id_valid = if_ready_go & if_valid;
++    assign  if_id_bus = { if_pc, if_inst };
++    //更新pc
++    assign  seq_pc = if_pc + 3'h4;
++    assign  { en_brch, brch_addr } = id_if_bus;
++    assign  if_nextpc = en_brch ? brch_addr : seq_pc;
++    always @(posedge clk ) begin
++        if(~resetn)begin
++            if_pc <= 32'h1bfffffc;
++        end
++        else if(if_allowin)begin
++            if_pc <= if_nextpc;
++        end
++    end
++    //取指
++    assign  inst_sram_en = if_allowin;
++    assign  inst_sram_addr = if_nextpc;
++    assign  if_inst = inst_sram_rdata;
++    assign  inst_sram_we = 4'b0;
++    assign  inst_sram_wdata = 32'b0;
++endmodule
+\ No newline at end of file
+diff --git a/Lab04_exp7/myCPU/MEM.v b/Lab04_exp7/myCPU/MEM.v
+new file mode 100644
+index 0000000..9dcbe15
+--- /dev/null
++++ b/Lab04_exp7/myCPU/MEM.v
+@@ -0,0 +1,52 @@
++//接受读数据存储器
++module MEM (
++    input           clk,
++    input           resetn,
++    //与EXE阶段
++    output          mem_allowin,
++    input           exe_mem_valid,
++    input   [102:0] exe_mem_bus,
++    //与WB阶段
++    output          mem_wb_valid,
++    input           wb_allowin,
++    output  [101:0] mem_wb_bus,
++    //与数据存储器
++    input   [ 31:0] data_sram_rdata
++);
++    //信号定义
++    reg             mem_valid;
++    wire            mem_ready_go;
++    wire    [ 31:0] mem_pc;
++    wire    [ 31:0] mem_inst;
++    reg     [102:0] exe_mem_bus_vld;
++    wire            gr_we;
++    wire            res_from_mem;
++    wire    [  4:0] dest;
++    wire    [ 31:0] alu_result;
++    wire    [ 31:0] final_result;
++
++    assign  mem_ready_go = 1'b1;
++    assign  mem_wb_valid = mem_ready_go & mem_valid;
++    assign  mem_allowin = mem_wb_valid & wb_allowin | ~mem_valid;
++    always @(posedge clk ) begin
++        if (~resetn) begin
++            mem_valid <= 1'b0;
++        end
++        else if(mem_allowin) begin
++            mem_valid <= exe_mem_valid;
++        end
++    end
++    always @(posedge clk ) begin
++        if (exe_mem_valid & mem_allowin) begin
++            exe_mem_bus_vld <= exe_mem_bus;
++        end
++    end
++    assign {
++        gr_we, res_from_mem, dest,
++        mem_pc, mem_inst, alu_result
++    } = exe_mem_bus_vld;
++    assign  final_result = res_from_mem ? data_sram_rdata : alu_result;
++    assign  mem_wb_bus = {
++        gr_we, mem_pc, mem_inst, final_result, dest
++    };
++endmodule
+\ No newline at end of file
+diff --git a/Lab04_exp7/myCPU/WB.v b/Lab04_exp7/myCPU/WB.v
+new file mode 100644
+index 0000000..4bdf2fe
+--- /dev/null
++++ b/Lab04_exp7/myCPU/WB.v
+@@ -0,0 +1,57 @@
++//写回寄存器
++module WB (
++    input           clk,
++    input           resetn,
++    //与MEM阶段
++    output          wb_allowin,
++    input           mem_wb_valid,
++    input   [101:0] mem_wb_bus,
++    //与ID阶段
++    output  [ 37:0] wb_id_bus,
++    //debug信号
++    output  [ 31:0] debug_wb_pc,
++    output  [  3:0] debug_wb_rf_we,
++    output  [  4:0] debug_wb_rf_wnum,
++    output  [ 31:0] debug_wb_rf_wdata
++);
++    //信号定义
++    reg             wb_valid;
++    reg     [101:0] mem_wb_bus_vld;
++    wire            wb_ready_go;
++    wire            gr_we;
++    wire            rf_we;
++    wire    [ 31:0] wb_pc;
++    wire    [ 31:0] wb_inst;
++    wire    [ 31:0] final_result;
++    wire    [  4:0] rf_waddr;
++    wire    [ 31:0] rf_wdata;
++    wire    [  4:0] dest;
++    assign wb_ready_go = 1'b1;
++    assign wb_allowin = wb_ready_go | ~wb_valid;
++    always @(posedge clk ) begin
++        if (~resetn) begin
++            wb_valid <= 1'b0;
++        end
++        else if (wb_allowin) begin
++            wb_valid <= mem_wb_valid;
++        end
++    end
++    always @(posedge clk ) begin
++        if (mem_wb_valid & wb_allowin) begin
++            mem_wb_bus_vld <= mem_wb_bus;
++        end
++    end
++    assign  {
++        gr_we, wb_pc, wb_inst, final_result, dest
++    } = mem_wb_bus_vld;
++    assign  rf_we = wb_valid & gr_we;
++    assign  rf_waddr = dest; 
++    assign  rf_wdata = final_result;
++    assign  wb_id_bus = {
++        rf_we, rf_waddr, rf_wdata
++    };
++    assign  debug_wb_pc = wb_pc;
++    assign  debug_wb_rf_we = {4{rf_we}};
++    assign  debug_wb_rf_wnum = rf_waddr;
++    assign  debug_wb_rf_wdata = final_result;
++endmodule
+\ No newline at end of file
+diff --git a/Lab04_exp7/myCPU/mycpu_top.v b/Lab04_exp7/myCPU/mycpu_top.v
+index afc6d01..2ccbf37 100644
+--- a/Lab04_exp7/myCPU/mycpu_top.v
++++ b/Lab04_exp7/myCPU/mycpu_top.v
+@@ -2,12 +2,14 @@ module mycpu_top(
+     input  wire        clk,
+     input  wire        resetn,
+     // inst sram interface
+-    output wire        inst_sram_we,
++    output wire        inst_sram_en,
++    output wire [ 3:0] inst_sram_we,
+     output wire [31:0] inst_sram_addr,
+     output wire [31:0] inst_sram_wdata,
+     input  wire [31:0] inst_sram_rdata,
+     // data sram interface
+-    output wire        data_sram_we,
++    output wire        data_sram_en,
++    output wire [ 3:0] data_sram_we,
+     output wire [31:0] data_sram_addr,
+     output wire [31:0] data_sram_wdata,
+     input  wire [31:0] data_sram_rdata,
+@@ -17,251 +19,82 @@ module mycpu_top(
+     output wire [ 4:0] debug_wb_rf_wnum,
+     output wire [31:0] debug_wb_rf_wdata
+ );
+-
+-wire [31:0] seq_pc;
+-wire [31:0] nextpc;
+-wire        br_taken;
+-wire [31:0] br_target;
+-wire [31:0] inst;
+-reg  [31:0] pc;
+-
+-wire [11:0] alu_op;
+-wire        load_op;
+-wire        src1_is_pc;
+-wire        src2_is_imm;
+-wire        res_from_mem;
+-wire        dst_is_r1;
+-wire        gr_we;
+-wire        mem_we;
+-wire        src_reg_is_rd;
+-wire [4: 0] dest;
+-wire [31:0] rj_value;
+-wire [31:0] rkd_value;
+-wire [31:0] imm;
+-wire [31:0] br_offs;
+-wire [31:0] jirl_offs;
+-
+-wire [ 5:0] op_31_26;
+-wire [ 3:0] op_25_22;
+-wire [ 1:0] op_21_20;
+-wire [ 4:0] op_19_15;
+-wire [ 4:0] rd;
+-wire [ 4:0] rj;
+-wire [ 4:0] rk;
+-wire [11:0] i12;
+-wire [19:0] i20;
+-wire [15:0] i16;
+-wire [25:0] i26;
+-
+-wire [63:0] op_31_26_d;
+-wire [15:0] op_25_22_d;
+-wire [ 3:0] op_21_20_d;
+-wire [31:0] op_19_15_d;
+-
+-wire        inst_add_w;
+-wire        inst_sub_w;
+-wire        inst_slt;
+-wire        inst_sltu;
+-wire        inst_nor;
+-wire        inst_and;
+-wire        inst_or;
+-wire        inst_xor;
+-wire        inst_slli_w;
+-wire        inst_srli_w;
+-wire        inst_srai_w;
+-wire        inst_addi_w;
+-wire        inst_ld_w;
+-wire        inst_st_w;
+-wire        inst_jirl;
+-wire        inst_b;
+-wire        inst_bl;
+-wire        inst_beq;
+-wire        inst_bne;
+-wire        inst_lu12i_w;
+-
+-wire        need_ui5;
+-wire        need_si12;
+-wire        need_si16;
+-wire        need_si20;
+-wire        need_si26;
+-wire        src2_is_4;
+-
+-wire [ 4:0] rf_raddr1;
+-wire [31:0] rf_rdata1;
+-wire [ 4:0] rf_raddr2;
+-wire [31:0] rf_rdata2;
+-wire        rf_we   ;
+-wire [ 4:0] rf_waddr;
+-wire [31:0] rf_wdata;
+-
+-wire [31:0] alu_src1   ;
+-wire [31:0] alu_src2   ;
+-wire [31:0] alu_result ;
+-
+-wire [31:0] mem_result;
+-wire [31:0] final_result;
+-
+-
+-assign seq_pc       = pc + 3'h4;
+-assign nextpc       = br_taken ? br_target : seq_pc;
+-wire reset;
+-assign reset=~resetn;
+-always @(posedge clk) begin
+-    if (reset) begin
+-        pc <= 32'h1c000000; 
+-    end
+-    else begin
+-        pc <= nextpc;
+-    end
+-end
+-
+-assign inst_sram_we    = 1'b0;
+-assign inst_sram_addr  = pc;
+-assign inst_sram_wdata = 32'b0;
+-assign inst            = inst_sram_rdata;
+-
+-assign op_31_26  = inst[31:26];
+-assign op_25_22  = inst[25:22];
+-assign op_21_20  = inst[21:20];
+-assign op_19_15  = inst[19:15];
+-
+-assign rd   = inst[ 4: 0];
+-assign rj   = inst[ 9: 5];
+-assign rk   = inst[14:10];
+-
+-assign i12  = inst[21:10];
+-assign i20  = inst[24: 5];
+-assign i16  = inst[25:10];
+-assign i26  = {inst[ 9: 0], inst[25:10]};
+-
+-decoder_6_64 u_dec0(.in(op_31_26 ), .out(op_31_26_d ));
+-decoder_4_16 u_dec1(.in(op_25_22 ), .out(op_25_22_d ));
+-decoder_2_4  u_dec2(.in(op_21_20 ), .out(op_21_20_d ));
+-decoder_5_32 u_dec3(.in(op_19_15 ), .out(op_19_15_d ));
+-
+-assign inst_add_w  = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h00];
+-assign inst_sub_w  = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h02];
+-assign inst_slt    = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h04];
+-assign inst_sltu   = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h05];
+-assign inst_nor    = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h08];
+-assign inst_and    = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h09];
+-assign inst_or     = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h0a];
+-assign inst_xor    = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h0b];
+-assign inst_slli_w = op_31_26_d[6'h00] & op_25_22_d[4'h1] & op_21_20_d[2'h0] & op_19_15_d[5'h01];
+-assign inst_srli_w = op_31_26_d[6'h00] & op_25_22_d[4'h1] & op_21_20_d[2'h0] & op_19_15_d[5'h09];
+-assign inst_srai_w = op_31_26_d[6'h00] & op_25_22_d[4'h1] & op_21_20_d[2'h0] & op_19_15_d[5'h11];
+-assign inst_addi_w = op_31_26_d[6'h00] & op_25_22_d[4'ha];
+-assign inst_ld_w   = op_31_26_d[6'h0a] & op_25_22_d[4'h2];
+-assign inst_st_w   = op_31_26_d[6'h0a] & op_25_22_d[4'h6];
+-assign inst_jirl   = op_31_26_d[6'h13];
+-assign inst_b      = op_31_26_d[6'h14];
+-assign inst_bl     = op_31_26_d[6'h15];
+-assign inst_beq    = op_31_26_d[6'h16];
+-assign inst_bne    = op_31_26_d[6'h17];
+-assign inst_lu12i_w= op_31_26_d[6'h05] & ~inst[25];
+-
+-assign alu_op[ 0] = inst_add_w | inst_addi_w | inst_ld_w | inst_st_w
+-                    | inst_jirl | inst_bl;
+-assign alu_op[ 1] = inst_sub_w;
+-assign alu_op[ 2] = inst_slt;
+-assign alu_op[ 3] = inst_sltu;
+-assign alu_op[ 4] = inst_and;
+-assign alu_op[ 5] = inst_nor;
+-assign alu_op[ 6] = inst_or;
+-assign alu_op[ 7] = inst_xor;
+-assign alu_op[ 8] = inst_slli_w;
+-assign alu_op[ 9] = inst_srli_w;
+-assign alu_op[10] = inst_srai_w;
+-assign alu_op[11] = inst_lu12i_w;
+-
+-assign need_ui5   =  inst_slli_w | inst_srli_w | inst_srai_w;
+-assign need_si12  =  inst_addi_w | inst_ld_w | inst_st_w;
+-assign need_si16  =  inst_jirl | inst_beq | inst_bne;
+-assign need_si20  =  inst_lu12i_w;
+-assign need_si26  =  inst_b | inst_bl;
+-assign src2_is_4  =  inst_jirl | inst_bl;
+-
+-assign imm = src2_is_4 ? 32'h4                      :
+-             need_si20 ? {i20[19:0], 12'b0}         :
+-/*need_ui5 || need_si12*/{{20{i12[11]}}, i12[11:0]} ;
+-
+-assign br_offs = need_si26 ? {{ 4{i26[25]}}, i26[25:0], 2'b0} :
+-                             {{14{i16[15]}}, i16[15:0], 2'b0} ;
+-
+-assign jirl_offs = {{14{i16[15]}}, i16[15:0], 2'b0};
+-
+-assign src_reg_is_rd = inst_beq | inst_bne | inst_st_w;
+-
+-assign src1_is_pc    = inst_jirl | inst_bl;
+-
+-assign src2_is_imm   = inst_slli_w |
+-                       inst_srli_w |
+-                       inst_srai_w |
+-                       inst_addi_w |
+-                       inst_ld_w   |
+-                       inst_st_w   |
+-                       inst_lu12i_w|
+-                       inst_jirl   |
+-                       inst_bl     ;
+-
+-assign res_from_mem  = inst_ld_w;
+-assign dst_is_r1     = inst_bl;
+-assign gr_we         = ~inst_st_w & ~inst_beq & ~inst_bne & ~inst_b;
+-assign mem_we        = inst_st_w;
+-assign dest          = dst_is_r1 ? 5'd1 : rd;
+-
+-assign rf_raddr1 = rj;
+-assign rf_raddr2 = src_reg_is_rd ? rd :rk;
+-regfile u_regfile(
+-    .clk    (clk      ),
+-    .raddr1 (rf_raddr1),
+-    .rdata1 (rf_rdata1),
+-    .raddr2 (rf_raddr2),
+-    .rdata2 (rf_rdata2),
+-    .we     (rf_we    ),
+-    .waddr  (rf_waddr ),
+-    .wdata  (rf_wdata )
++    //信号定义
++    wire            id_allowin;
++    wire            if_id_valid;
++    wire    [ 63:0] if_id_bus;
++    wire    [ 32:0] id_if_bus;
++    wire            exe_allowin;
++    wire            id_exe_valid;
++    wire    [179:0] id_exe_bus;
++    wire    [ 37:0] wb_id_bus;
++    wire    [102:0] exe_mem_bus;
++    wire            exe_mem_valid;
++    wire            mem_allowin;
++    wire            mem_wb_valid;
++    wire    [101:0] mem_wb_bus;
++    wire            wb_allowin;
++    //模块调用
++    IF my_IF (
++        .clk                (clk),
++        .resetn             (resetn),
++        .id_allowin         (id_allowin),
++        .if_id_valid        (if_id_valid),
++        .if_id_bus          (if_id_bus),
++        .id_if_bus          (id_if_bus),
++        .inst_sram_en       (inst_sram_en),
++        .inst_sram_we       (inst_sram_we),
++        .inst_sram_addr     (inst_sram_addr),
++        .inst_sram_rdata    (inst_sram_rdata),
++        .inst_sram_wdata    (inst_sram_wdata)
+     );
+-
+-assign rj_value  = rf_rdata1;
+-assign rkd_value = rf_rdata2;
+-
+-assign rj_eq_rd = (rj_value == rkd_value);
+-assign br_taken = (   inst_beq  &&  rj_eq_rd
+-                   || inst_bne  && !rj_eq_rd
+-                   || inst_jirl
+-                   || inst_bl
+-                   || inst_b
+-                  ) ;
+-assign br_target = (inst_beq || inst_bne || inst_bl || inst_b) ? (pc + br_offs) :
+-                                                   /*inst_jirl*/ (rj_value + jirl_offs);
+-
+-assign alu_src1 = src1_is_pc  ? pc[31:0] : rj_value;
+-assign alu_src2 = src2_is_imm ? imm : rkd_value;
+-
+-alu u_alu(
+-    .alu_op     (alu_op    ),
+-    .alu_src1   (alu_src1  ),
+-    .alu_src2   (alu_src2  ),
+-    .alu_result (alu_result)
++    ID my_ID (
++        .clk                (clk),
++        .resetn             (resetn),
++        .if_id_valid        (if_id_valid),
++        .id_allowin         (id_allowin),
++        .if_id_bus          (if_id_bus),
++        .id_if_bus          (id_if_bus),
++        .exe_allowin        (exe_allowin),
++        .id_exe_valid       (id_exe_valid),
++        .id_exe_bus         (id_exe_bus),
++        .wb_id_bus          (wb_id_bus)
+     );
+-
+-//assign data_sram_en    = (rfrom_mem || mem_we) && valid;
+-assign data_sram_we    = mem_we;
+-assign data_sram_addr  = alu_result;
+-assign data_sram_wdata = rkd_value;
+-
+-assign mem_result   = data_sram_rdata;
+-assign final_result = res_from_mem ? mem_result : alu_result;
+-
+-assign rf_we    = gr_we;
+-assign rf_waddr = dest;
+-assign rf_wdata = final_result;
+-
+-// debug info generate
+-assign debug_wb_pc       = pc;
+-assign debug_wb_rf_we   = {4{rf_we}};
+-assign debug_wb_rf_wnum  = dest;
+-assign debug_wb_rf_wdata = final_result;
+-
+-endmodule
++    EXE my_EXE (
++        .clk                (clk),
++        .resetn             (resetn),
++        .exe_allowin        (exe_allowin),
++        .id_exe_valid       (id_exe_valid),
++        .id_exe_bus         (id_exe_bus),
++        .exe_mem_valid      (exe_mem_valid),
++        .mem_allowin        (mem_allowin),
++        .exe_mem_bus        (exe_mem_bus),
++        .data_sram_en       (data_sram_en),
++        .data_sram_we       (data_sram_we),
++        .data_sram_addr     (data_sram_addr),
++        .data_sram_wdata    (data_sram_wdata)
++    );
++    MEM my_MEM (
++        .clk                (clk),
++        .resetn             (resetn),
++        .mem_allowin        (mem_allowin),
++        .exe_mem_valid      (exe_mem_valid),
++        .exe_mem_bus        (exe_mem_bus),
++        .mem_wb_valid       (mem_wb_valid),
++        .wb_allowin         (wb_allowin),
++        .mem_wb_bus         (mem_wb_bus),
++        .data_sram_rdata    (data_sram_rdata)
++    );
++    WB my_WB (
++        .clk                (clk),
++        .resetn             (resetn),
++        .wb_allowin         (wb_allowin),
++        .mem_wb_valid       (mem_wb_valid),
++        .mem_wb_bus         (mem_wb_bus),
++        .wb_id_bus          (wb_id_bus),
++        .debug_wb_pc        (debug_wb_pc),
++        .debug_wb_rf_we     (debug_wb_rf_we),
++        .debug_wb_rf_wnum   (debug_wb_rf_wnum),
++        .debug_wb_rf_wdata  (debug_wb_rf_wdata)
++    );
++endmodule
+\ No newline at end of file
+diff --git a/Lab04_exp7/myCPU/tools.v b/Lab04_exp7/myCPU/tools.v
+index e713a45..ee43e3a 100644
+--- a/Lab04_exp7/myCPU/tools.v
++++ b/Lab04_exp7/myCPU/tools.v
+@@ -43,7 +43,7 @@ module decoder_6_64(
+ );
+ 
+ genvar i;
+-generate for (i=0; i<63; i=i+1) begin : gen_for_dec_6_64
++generate for (i=0; i<64; i=i+1) begin : gen_for_dec_6_64
+     assign out[i] = (in == i);
+ end endgenerate
+ 
+-- 
+2.37.3.windows.1
+
