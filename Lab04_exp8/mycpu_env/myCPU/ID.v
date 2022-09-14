@@ -19,8 +19,8 @@ module ID (
     wire            id_ready_go;//可以去下个阶段
     wire    [31:0]  id_inst;
     wire    [31:0]  id_pc;
-    wire            en_brch;
-    wire    [31:0]  brch_addr;
+    wire            id_en_brch;
+    wire    [31:0]  id_brch_addr;
     reg     [63:0]  if_id_bus_vld;
 
     assign id_ready_go = 1'b1;
@@ -30,7 +30,7 @@ module ID (
         if(~resetn) begin
             id_valid <= 1'b0;
         end
-        else if(en_brch) begin
+        else if(id_en_brch) begin
             id_valid <= 1'b0;
         end
         else if(id_allowin) begin
@@ -96,18 +96,18 @@ module ID (
     wire        rf_we   ;
     wire [ 4:0] rf_waddr;
     wire [31:0] rf_wdata;
-    wire [11:0] alu_op;
-    wire [31:0] alu_src1   ;
-    wire [31:0] alu_src2   ;
+    wire [11:0] id_alu_op;
+    wire [31:0] id_alu_src1   ;
+    wire [31:0] id_alu_src2   ;
     wire [31:0] alu_result ;
 
     wire [31:0] mem_result;
     wire [31:0] final_result;
-    wire [4:0]  dest;
+    wire [4:0]  id_dest;
 
     wire [31:0] imm;
     wire [31:0] rj_value;
-    wire [31:0] rkd_value;
+    wire [31:0] id_rkd_value;
     wire [31:0] br_offs;
 
     assign op_31_26  = id_inst[31:26];
@@ -150,19 +150,19 @@ module ID (
     assign inst_bne    = op_31_26_d[6'h17];
     assign inst_lu12i_w= op_31_26_d[6'h05] & ~id_inst[25];
 
-    assign alu_op[ 0] = inst_add_w | inst_addi_w | inst_ld_w | inst_st_w
+    assign id_alu_op[ 0] = inst_add_w | inst_addi_w | inst_ld_w | inst_st_w
                         | inst_jirl | inst_bl;
-    assign alu_op[ 1] = inst_sub_w;
-    assign alu_op[ 2] = inst_slt;
-    assign alu_op[ 3] = inst_sltu;
-    assign alu_op[ 4] = inst_and;
-    assign alu_op[ 5] = inst_nor;
-    assign alu_op[ 6] = inst_or;
-    assign alu_op[ 7] = inst_xor;
-    assign alu_op[ 8] = inst_slli_w;
-    assign alu_op[ 9] = inst_srli_w;
-    assign alu_op[10] = inst_srai_w;
-    assign alu_op[11] = inst_lu12i_w;
+    assign id_alu_op[ 1] = inst_sub_w;
+    assign id_alu_op[ 2] = inst_slt;
+    assign id_alu_op[ 3] = inst_sltu;
+    assign id_alu_op[ 4] = inst_and;
+    assign id_alu_op[ 5] = inst_nor;
+    assign id_alu_op[ 6] = inst_or;
+    assign id_alu_op[ 7] = inst_xor;
+    assign id_alu_op[ 8] = inst_slli_w;
+    assign id_alu_op[ 9] = inst_srli_w;
+    assign id_alu_op[10] = inst_srai_w;
+    assign id_alu_op[11] = inst_lu12i_w;
 
     assign need_ui5   =  inst_slli_w | inst_srli_w | inst_srai_w;
     assign need_si12  =  inst_addi_w | inst_ld_w | inst_st_w;
@@ -194,11 +194,11 @@ module ID (
                         inst_jirl   |
                         inst_bl     ;
 
-    assign res_from_mem  = inst_ld_w;
+    assign id_res_from_mem  = inst_ld_w;
     assign dst_is_r1     = inst_bl;
-    assign gr_we         = ~inst_st_w & ~inst_beq & ~inst_bne & ~inst_b;
-    assign mem_we        = inst_st_w;
-    assign dest          = dst_is_r1 ? 5'd1 : rd;
+    assign id_gr_we         = ~inst_st_w & ~inst_beq & ~inst_bne & ~inst_b;
+    assign id_mem_we        = inst_st_w;
+    assign id_dest          = dst_is_r1 ? 5'd1 : rd;
 
     assign rf_raddr1 = rj;
     assign rf_raddr2 = src_reg_is_rd ? rd :rk;
@@ -217,26 +217,26 @@ module ID (
         );
 
     assign rj_value  = rf_rdata1;
-    assign rkd_value = rf_rdata2;
+    assign id_rkd_value = rf_rdata2;
 
-    assign rj_eq_rd = (rj_value == rkd_value);
-    assign en_brch = (   inst_beq  &&  rj_eq_rd
+    assign rj_eq_rd = (rj_value == id_rkd_value);
+    assign id_en_brch = (   inst_beq  &&  rj_eq_rd
                     || inst_bne  && !rj_eq_rd
                     || inst_jirl
                     || inst_bl
                     || inst_b
     ) &id_valid;
-    assign brch_addr = (inst_beq || inst_bne || inst_bl || inst_b) ? (id_pc + br_offs) :
+    assign id_brch_addr = (inst_beq || inst_bne || inst_bl || inst_b) ? (id_pc + br_offs) :
                                                     /*inst_jirl*/ (rj_value + jirl_offs);
-    assign ds_to_fs_bus={en_brch,brch_addr};
-    assign alu_src1 = src1_is_pc  ? id_pc : rj_value;
-    assign alu_src2 = src2_is_imm ? imm : rkd_value;
+    assign ds_to_fs_bus={id_en_brch,id_brch_addr};
+    assign id_alu_src1 = src1_is_pc  ? id_pc : rj_value;
+    assign id_alu_src2 = src2_is_imm ? imm : id_rkd_value;
     assign id_exe_bus = {
-        gr_we, mem_we, res_from_mem, 
-        alu_op, alu_src1, alu_src2,
-        dest, rkd_value, id_inst, id_pc
+        id_gr_we, id_mem_we, id_res_from_mem, 
+        id_alu_op, id_alu_src1, id_alu_src2,
+        id_dest, id_rkd_value, id_inst, id_pc
     };
     assign id_if_bus = {
-        en_brch, brch_addr
+        id_en_brch, id_brch_addr
     };
 endmodule

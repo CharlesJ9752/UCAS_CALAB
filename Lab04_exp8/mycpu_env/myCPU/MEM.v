@@ -19,11 +19,11 @@ module MEM (
     wire    [ 31:0] mem_pc;
     wire    [ 31:0] mem_inst;
     reg     [102:0] exe_mem_bus_vld;
-    wire            gr_we;
+    wire            mem_gr_we;
     wire            res_from_mem;
-    wire    [  4:0] dest;
+    wire    [  4:0] mem_dest;
     wire    [ 31:0] alu_result;
-    wire    [ 31:0] final_result;
+    wire    [ 31:0] mem_final_result;
 
     assign  mem_ready_go = 1'b1;
     assign  mem_wb_valid = mem_ready_go & mem_valid;
@@ -42,11 +42,11 @@ module MEM (
         end
     end
     assign {
-        gr_we, res_from_mem, dest,
+        mem_gr_we, res_from_mem, mem_dest,
         mem_pc, mem_inst, alu_result
     } = exe_mem_bus_vld;
-    assign  final_result = res_from_mem ? data_sram_rdata : alu_result;
+    assign  mem_final_result = res_from_mem ? data_sram_rdata : alu_result;
     assign  mem_wb_bus = {
-        gr_we, mem_pc, mem_inst, final_result, dest
+        mem_gr_we, mem_pc, mem_inst, mem_final_result, mem_dest
     };
 endmodule
