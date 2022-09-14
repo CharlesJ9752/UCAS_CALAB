@@ -14,7 +14,9 @@ module EXE (
     output          data_sram_en,
     output  [ 3:0]  data_sram_we,
     output  [31:0]  data_sram_addr,
-    output  [31:0]  data_sram_wdata
+    output  [31:0]  data_sram_wdata,
+    //写信号
+    output  [ 5:0]  exe_wr_bus
 );
     //信号定义
     reg             exe_valid;
@@ -66,8 +68,15 @@ module EXE (
     assign  data_sram_we = {4{exe_mem_we}};
     assign  data_sram_addr = alu_result;
     assign  data_sram_wdata = exe_rkd_value;
-    assign exe_mem_bus = {
+    assign  exe_mem_bus = {
         exe_gr_we, exe_res_from_mem, exe_dest,
         exe_pc, exe_inst, alu_result
+    };
+    //写信号
+    wire            to_id_exe_gr_we;
+    wire    [4:0]   to_id_exe_dest;
+    assign  {to_id_exe_gr_we, to_id_exe_dest} = {{exe_valid & exe_gr_we}, exe_dest};
+    assign  exe_wr_bus = {
+        to_id_exe_gr_we, to_id_exe_dest
     };
 endmodule

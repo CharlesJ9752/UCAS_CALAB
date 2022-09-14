@@ -11,7 +11,9 @@ module MEM (
     input           wb_allowin,
     output  [101:0] mem_wb_bus,
     //与数据存储器
-    input   [ 31:0] data_sram_rdata
+    input   [ 31:0] data_sram_rdata,
+    //写信号
+    output  [ 5:0]  mem_wr_bus
 );
     //信号定义
     reg             mem_valid;
@@ -48,5 +50,12 @@ module MEM (
     assign  mem_final_result = res_from_mem ? data_sram_rdata : alu_result;
     assign  mem_wb_bus = {
         mem_gr_we, mem_pc, mem_inst, mem_final_result, mem_dest
+    };
+    //写信号
+    wire            to_id_mem_gr_we;
+    wire    [4:0]   to_id_mem_dest;
+    assign  {to_id_mem_gr_we, to_id_mem_dest} = {{mem_valid & mem_gr_we}, mem_dest};
+    assign  mem_wr_bus = {
+        to_id_mem_gr_we, to_id_mem_dest
     };
 endmodule
