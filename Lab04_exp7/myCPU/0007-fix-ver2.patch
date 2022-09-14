@@ -1,0 +1,75 @@
+From f0a2efe965324459ee0aa71d19b6c81e0abfa1ea Mon Sep 17 00:00:00 2001
+From: CharlesJ9752 <1499695378@qq.com>
+Date: Mon, 12 Sep 2022 12:33:09 +0800
+Subject: [PATCH 7/7] fix: ver2
+
+---
+ cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/ID.v | 6 ++++++
+ cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/IF.v | 5 ++++-
+ cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/WB.v | 4 ++--
+ 3 files changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/ID.v b/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/ID.v
+index 84ab661..12c30d7 100644
+--- a/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/ID.v
++++ b/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/ID.v
+@@ -30,6 +30,9 @@ module ID (
+         if(~resetn) begin
+             id_valid <= 1'b0;
+         end
++        else if(en_brch) begin
++            id_valid <= 1'b0;
++        end
+         else if(id_allowin) begin
+             id_valid <= if_id_valid;
+         end
+@@ -233,4 +236,7 @@ module ID (
+         alu_op, alu_src1, alu_src2,
+         dest, rkd_value, id_inst, id_pc
+     };
++    assign id_if_bus = {
++        en_brch, brch_addr
++    };
+ endmodule
+\ No newline at end of file
+diff --git a/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/IF.v b/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/IF.v
+index 0f706a6..fe4c1b8 100644
+--- a/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/IF.v
++++ b/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/IF.v
+@@ -34,6 +34,9 @@ module IF (
+         else if(if_allowin)begin
+             if_valid <= 1'b1;
+         end
++        else if(en_brch)begin
++            if_valid <= 1'b0;
++        end
+     end
+     assign  if_id_valid = if_ready_go & if_valid;
+     assign  if_id_bus = { if_pc, if_inst };
+@@ -51,7 +54,7 @@ module IF (
+     end
+     //取指
+     assign  inst_sram_en = if_allowin;
+-    assign  inst_sram_addr = if_pc;
++    assign  inst_sram_addr = if_nextpc;
+     assign  if_inst = inst_sram_rdata;
+     assign  inst_sram_we = 4'b0;
+     assign  inst_sram_wdata = 32'b0;
+diff --git a/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/WB.v b/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/WB.v
+index 5ca5c6a..4bdf2fe 100644
+--- a/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/WB.v
++++ b/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/WB.v
+@@ -26,8 +26,8 @@ module WB (
+     wire    [  4:0] rf_waddr;
+     wire    [ 31:0] rf_wdata;
+     wire    [  4:0] dest;
+-
+-
++    assign wb_ready_go = 1'b1;
++    assign wb_allowin = wb_ready_go | ~wb_valid;
+     always @(posedge clk ) begin
+         if (~resetn) begin
+             wb_valid <= 1'b0;
+-- 
+2.37.3.windows.1
+

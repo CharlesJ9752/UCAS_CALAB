@@ -1,28 +1,20 @@
-From c3046230d268ab318de4183fbac7c446944b2b0e Mon Sep 17 00:00:00 2001
+From 71761798ecad286d71f7578c3575fd1c1492c3db Mon Sep 17 00:00:00 2001
 From: CharlesJ9752 <1499695378@qq.com>
-Date: Mon, 12 Sep 2022 12:56:40 +0800
-Subject: [PATCH] final ver
+Date: Mon, 12 Sep 2022 12:15:11 +0800
+Subject: [PATCH 6/7] ver1
 
 ---
- Lab04_exp7/myCPU/EXE.v       |  73 ++++++++
- Lab04_exp7/myCPU/ID.v        | 242 ++++++++++++++++++++++++++
- Lab04_exp7/myCPU/IF.v        |  61 +++++++
- Lab04_exp7/myCPU/MEM.v       |  52 ++++++
- Lab04_exp7/myCPU/WB.v        |  57 ++++++
- Lab04_exp7/myCPU/mycpu_top.v | 329 +++++++++--------------------------
- Lab04_exp7/myCPU/tools.v     |   2 +-
- 7 files changed, 567 insertions(+), 249 deletions(-)
- create mode 100644 Lab04_exp7/myCPU/EXE.v
- create mode 100644 Lab04_exp7/myCPU/ID.v
- create mode 100644 Lab04_exp7/myCPU/IF.v
- create mode 100644 Lab04_exp7/myCPU/MEM.v
- create mode 100644 Lab04_exp7/myCPU/WB.v
+ .../mycpu_env/myCPU/EXE.v                     |  73 ++++
+ cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/ID.v | 232 ++++++++++++-
+ .../mycpu_env/myCPU/MEM.v                     |  52 +++
+ cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/WB.v |  57 +++
+ .../mycpu_env/myCPU/mycpu_top.v               | 327 +++++-------------
+ 5 files changed, 491 insertions(+), 250 deletions(-)
 
-diff --git a/Lab04_exp7/myCPU/EXE.v b/Lab04_exp7/myCPU/EXE.v
-new file mode 100644
-index 0000000..af27b34
---- /dev/null
-+++ b/Lab04_exp7/myCPU/EXE.v
+diff --git a/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/EXE.v b/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/EXE.v
+index e69de29..af27b34 100644
+--- a/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/EXE.v
++++ b/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/EXE.v
 @@ -0,0 +1,73 @@
 +//运行alu，写存储器
 +module EXE (
@@ -98,18 +90,20 @@ index 0000000..af27b34
 +    };
 +endmodule
 \ No newline at end of file
-diff --git a/Lab04_exp7/myCPU/ID.v b/Lab04_exp7/myCPU/ID.v
-new file mode 100644
-index 0000000..12c30d7
---- /dev/null
-+++ b/Lab04_exp7/myCPU/ID.v
-@@ -0,0 +1,242 @@
-+//译码，生成操作数，写回寄存器堆
+diff --git a/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/ID.v b/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/ID.v
+index dff5861..84ab661 100644
+--- a/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/ID.v
++++ b/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/ID.v
+@@ -1,10 +1,236 @@
+ //译码，生成操作数，写回寄存器堆
+-module  ID (
 +module ID (
-+    input           clk,
-+    input           resetn,
-+    //与IF阶段
-+    input           if_id_valid,
+     input           clk,
+     input           resetn,
+     //与IF阶段
+     input           if_id_valid,
+-    output          id_if_allowin,
+-
 +    output          id_allowin,
 +    input   [63:0]  if_id_bus,//pc+inst
 +    output  [32:0]  id_if_bus,//en_brch+brch_addr
@@ -119,7 +113,7 @@ index 0000000..12c30d7
 +    output  [179:0] id_exe_bus,
 +    //来自WB阶段
 +    input   [37:0]  wb_id_bus
-+);
+ );
 +    //信号定义
 +    reg             id_valid;//指令在id中
 +    wire            id_ready_go;//可以去下个阶段
@@ -134,9 +128,6 @@ index 0000000..12c30d7
 +    assign id_allowin = id_exe_valid & exe_allowin | ~id_valid;
 +    always @(posedge clk ) begin
 +        if(~resetn) begin
-+            id_valid <= 1'b0;
-+        end
-+        else if(en_brch) begin
 +            id_valid <= 1'b0;
 +        end
 +        else if(id_allowin) begin
@@ -342,84 +333,12 @@ index 0000000..12c30d7
 +        alu_op, alu_src1, alu_src2,
 +        dest, rkd_value, id_inst, id_pc
 +    };
-+    assign id_if_bus = {
-+        en_brch, brch_addr
-+    };
-+endmodule
+ endmodule
 \ No newline at end of file
-diff --git a/Lab04_exp7/myCPU/IF.v b/Lab04_exp7/myCPU/IF.v
-new file mode 100644
-index 0000000..fe4c1b8
---- /dev/null
-+++ b/Lab04_exp7/myCPU/IF.v
-@@ -0,0 +1,61 @@
-+//取指，更新pc
-+module IF (
-+    input           clk,
-+    input           resetn,
-+    //与ID阶段
-+    input           id_allowin,
-+    output          if_id_valid,
-+    output  [63:0]  if_id_bus,//if_pc+if_inst
-+    input   [32:0]  id_if_bus,//en_brch+brch_addr
-+    //与指令存储器
-+    output          inst_sram_en,
-+    output  [3:0]   inst_sram_we,
-+    output  [31:0]  inst_sram_addr,
-+    output  [31:0]  inst_sram_wdata,
-+    input   [31:0]  inst_sram_rdata
-+);
-+    //信号定义
-+    reg             if_valid;//有指令在if中
-+    wire            if_ready_go;//指令可以去下一个阶段
-+    wire            if_allowin;//可接受
-+    wire            en_brch;//使能跳转
-+    reg     [31:0]  if_pc;//if阶段的pc值
-+    wire    [31:0]  if_inst;//if阶段的指令
-+    wire    [31:0]  if_nextpc;//下一个pc
-+    wire    [31:0]  brch_addr;//若跳转的pc
-+    wire    [31:0]  seq_pc;//若顺序的pc
-+
-+    assign  if_ready_go = 1'b1;
-+    assign  if_allowin = ~resetn | if_ready_go & id_allowin;//还没开始，或当前指令可以去下一步
-+    always @(posedge clk ) begin
-+        if(~resetn)begin
-+            if_valid <= 1'b0;
-+        end
-+        else if(if_allowin)begin
-+            if_valid <= 1'b1;
-+        end
-+        else if(en_brch)begin
-+            if_valid <= 1'b0;
-+        end
-+    end
-+    assign  if_id_valid = if_ready_go & if_valid;
-+    assign  if_id_bus = { if_pc, if_inst };
-+    //更新pc
-+    assign  seq_pc = if_pc + 3'h4;
-+    assign  { en_brch, brch_addr } = id_if_bus;
-+    assign  if_nextpc = en_brch ? brch_addr : seq_pc;
-+    always @(posedge clk ) begin
-+        if(~resetn)begin
-+            if_pc <= 32'h1bfffffc;
-+        end
-+        else if(if_allowin)begin
-+            if_pc <= if_nextpc;
-+        end
-+    end
-+    //取指
-+    assign  inst_sram_en = if_allowin;
-+    assign  inst_sram_addr = if_nextpc;
-+    assign  if_inst = inst_sram_rdata;
-+    assign  inst_sram_we = 4'b0;
-+    assign  inst_sram_wdata = 32'b0;
-+endmodule
-\ No newline at end of file
-diff --git a/Lab04_exp7/myCPU/MEM.v b/Lab04_exp7/myCPU/MEM.v
-new file mode 100644
-index 0000000..9dcbe15
---- /dev/null
-+++ b/Lab04_exp7/myCPU/MEM.v
+diff --git a/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/MEM.v b/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/MEM.v
+index e69de29..9dcbe15 100644
+--- a/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/MEM.v
++++ b/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/MEM.v
 @@ -0,0 +1,52 @@
 +//接受读数据存储器
 +module MEM (
@@ -474,11 +393,10 @@ index 0000000..9dcbe15
 +    };
 +endmodule
 \ No newline at end of file
-diff --git a/Lab04_exp7/myCPU/WB.v b/Lab04_exp7/myCPU/WB.v
-new file mode 100644
-index 0000000..4bdf2fe
---- /dev/null
-+++ b/Lab04_exp7/myCPU/WB.v
+diff --git a/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/WB.v b/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/WB.v
+index e69de29..5ca5c6a 100644
+--- a/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/WB.v
++++ b/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/WB.v
 @@ -0,0 +1,57 @@
 +//写回寄存器
 +module WB (
@@ -508,8 +426,8 @@ index 0000000..4bdf2fe
 +    wire    [  4:0] rf_waddr;
 +    wire    [ 31:0] rf_wdata;
 +    wire    [  4:0] dest;
-+    assign wb_ready_go = 1'b1;
-+    assign wb_allowin = wb_ready_go | ~wb_valid;
++
++
 +    always @(posedge clk ) begin
 +        if (~resetn) begin
 +            wb_valid <= 1'b0;
@@ -538,10 +456,10 @@ index 0000000..4bdf2fe
 +    assign  debug_wb_rf_wdata = final_result;
 +endmodule
 \ No newline at end of file
-diff --git a/Lab04_exp7/myCPU/mycpu_top.v b/Lab04_exp7/myCPU/mycpu_top.v
-index afc6d01..2ccbf37 100644
---- a/Lab04_exp7/myCPU/mycpu_top.v
-+++ b/Lab04_exp7/myCPU/mycpu_top.v
+diff --git a/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/mycpu_top.v b/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/mycpu_top.v
+index 50a6880..2ccbf37 100644
+--- a/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/mycpu_top.v
++++ b/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/mycpu_top.v
 @@ -2,12 +2,14 @@ module mycpu_top(
      input  wire        clk,
      input  wire        resetn,
@@ -829,27 +747,7 @@ index afc6d01..2ccbf37 100644
 +        .id_exe_valid       (id_exe_valid),
 +        .id_exe_bus         (id_exe_bus),
 +        .wb_id_bus          (wb_id_bus)
-     );
--
--//assign data_sram_en    = (rfrom_mem || mem_we) && valid;
--assign data_sram_we    = mem_we;
--assign data_sram_addr  = alu_result;
--assign data_sram_wdata = rkd_value;
--
--assign mem_result   = data_sram_rdata;
--assign final_result = res_from_mem ? mem_result : alu_result;
--
--assign rf_we    = gr_we;
--assign rf_waddr = dest;
--assign rf_wdata = final_result;
--
--// debug info generate
--assign debug_wb_pc       = pc;
--assign debug_wb_rf_we   = {4{rf_we}};
--assign debug_wb_rf_wnum  = dest;
--assign debug_wb_rf_wdata = final_result;
--
--endmodule
++    );
 +    EXE my_EXE (
 +        .clk                (clk),
 +        .resetn             (resetn),
@@ -886,22 +784,28 @@ index afc6d01..2ccbf37 100644
 +        .debug_wb_rf_we     (debug_wb_rf_we),
 +        .debug_wb_rf_wnum   (debug_wb_rf_wnum),
 +        .debug_wb_rf_wdata  (debug_wb_rf_wdata)
-+    );
-+endmodule
+     );
+-
+-//assign data_sram_en    = (rfrom_mem || mem_we) && valid;
+-assign data_sram_we    = mem_we;
+-assign data_sram_addr  = alu_result;
+-assign data_sram_wdata = rkd_value;
+-
+-assign mem_result   = data_sram_rdata;
+-assign final_result = res_from_mem ? mem_result : alu_result;
+-
+-assign rf_we    = gr_we;
+-assign rf_waddr = dest;
+-assign rf_wdata = final_result;
+-
+-// debug info generate
+-assign debug_wb_pc       = pc;
+-assign debug_wb_rf_we   = {4{rf_we}};
+-assign debug_wb_rf_wnum  = dest;
+-assign debug_wb_rf_wdata = final_result;
+-
+ endmodule
 \ No newline at end of file
-diff --git a/Lab04_exp7/myCPU/tools.v b/Lab04_exp7/myCPU/tools.v
-index e713a45..ee43e3a 100644
---- a/Lab04_exp7/myCPU/tools.v
-+++ b/Lab04_exp7/myCPU/tools.v
-@@ -43,7 +43,7 @@ module decoder_6_64(
- );
- 
- genvar i;
--generate for (i=0; i<63; i=i+1) begin : gen_for_dec_6_64
-+generate for (i=0; i<64; i=i+1) begin : gen_for_dec_6_64
-     assign out[i] = (in == i);
- end endgenerate
- 
 -- 
 2.37.3.windows.1
 

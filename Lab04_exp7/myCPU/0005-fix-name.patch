@@ -1,0 +1,28 @@
+From 49f1f9f8d076ee96a2dad34d61609d69697695d5 Mon Sep 17 00:00:00 2001
+From: CharlesJ9752 <1499695378@qq.com>
+Date: Mon, 12 Sep 2022 01:30:57 +0800
+Subject: [PATCH 5/7] fix name
+
+---
+ cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/ID.v | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/ID.v b/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/ID.v
+index e69de29..dff5861 100644
+--- a/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/ID.v
++++ b/cdp_ede_local-Lab04_exp7/mycpu_env/myCPU/ID.v
+@@ -0,0 +1,10 @@
++//译码，生成操作数，写回寄存器堆
++module  ID (
++    input           clk,
++    input           resetn,
++    //与IF阶段
++    input           if_id_valid,
++    output          id_if_allowin,
++
++);
++endmodule
+\ No newline at end of file
+-- 
+2.37.3.windows.1
+
