@@ -34,6 +34,9 @@ module mycpu_top(
     wire            mem_wb_valid;
     wire    [101:0] mem_wb_bus;
     wire            wb_allowin;
+    wire    [5:0]   exe_wr_bus;
+    wire    [5:0]   mem_wr_bus;
+    wire    [5:0]   wb_wr_bus;
     //模块调用
     IF my_IF (
         .clk                (clk),
@@ -58,7 +61,10 @@ module mycpu_top(
         .exe_allowin        (exe_allowin),
         .id_exe_valid       (id_exe_valid),
         .id_exe_bus         (id_exe_bus),
-        .wb_id_bus          (wb_id_bus)
+        .wb_id_bus          (wb_id_bus),
+        .exe_wr_bus         (exe_wr_bus),
+        .mem_wr_bus         (mem_wr_bus),
+        .wb_wr_bus          (wb_wr_bus)
     );
     EXE my_EXE (
         .clk                (clk),
@@ -72,7 +78,8 @@ module mycpu_top(
         .data_sram_en       (data_sram_en),
         .data_sram_we       (data_sram_we),
         .data_sram_addr     (data_sram_addr),
-        .data_sram_wdata    (data_sram_wdata)
+        .data_sram_wdata    (data_sram_wdata),
+        .exe_wr_bus         (exe_wr_bus)
     );
     MEM my_MEM (
         .clk                (clk),
@@ -83,7 +90,8 @@ module mycpu_top(
         .mem_wb_valid       (mem_wb_valid),
         .wb_allowin         (wb_allowin),
         .mem_wb_bus         (mem_wb_bus),
-        .data_sram_rdata    (data_sram_rdata)
+        .data_sram_rdata    (data_sram_rdata),
+        .mem_wr_bus         (mem_wr_bus)
     );
     WB my_WB (
         .clk                (clk),
@@ -95,6 +103,7 @@ module mycpu_top(
         .debug_wb_pc        (debug_wb_pc),
         .debug_wb_rf_we     (debug_wb_rf_we),
         .debug_wb_rf_wnum   (debug_wb_rf_wnum),
-        .debug_wb_rf_wdata  (debug_wb_rf_wdata)
+        .debug_wb_rf_wdata  (debug_wb_rf_wdata),
+        .wb_wr_bus          (wb_wr_bus)
     );
 endmodule
