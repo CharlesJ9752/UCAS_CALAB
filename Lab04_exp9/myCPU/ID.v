@@ -5,18 +5,17 @@ module ID (
     //与IF阶段
     input           if_id_valid,
     output          id_allowin,
-    input   [63:0]  if_id_bus,//pc+inst
-    output  [32:0]  id_if_bus,//en_brch+brch_addr
+    input   [ 63:0] if_id_bus,//pc+inst
+    output  [ 32:0] id_if_bus,//en_brch+brch_addr
     //与EXE阶段
     input           exe_allowin,
     output          id_exe_valid,
     output  [179:0] id_exe_bus,
     //来自WB阶段
-    input   [37:0]  wb_id_bus,
+    input   [ 37:0] wb_id_bus,
     //来自各级的写使能和写地址信号，用于判断阻�?
-    input   [5:0]   exe_wr_bus,
-    input   [5:0]   mem_wr_bus,
-    input   [5:0]   wb_wr_bus
+    input   [ 38:0]  exe_wr_bus,
+    input   [ 37:0]  mem_wr_bus
 );
     //信号定义
     reg             id_valid;//指令在id�?
@@ -26,26 +25,25 @@ module ID (
     wire    [31:0]  id_brch_addr;
     reg     [63:0]  if_id_bus_vld;
     //判断是否阻塞
-    wire            exe_gr_we;
-    wire            mem_gr_we;
-    wire            wb_gr_we;
-    wire    [4:0]   exe_dest;
-    wire    [4:0]   mem_dest;
-    wire    [4:0]   wb_dest;
+    wire            exe_en_bypass;
+    wire            exe_en_block;
+    wire            exe_res_from_mem;
+    wire            mem_en_bypass;
+    wire            mem_en_block;
+    wire    [31:0]  exe_wdata;
+    wire    [31:0]  mem_wdata;
+    wire    [ 4:0]  exe_dest;
+    wire    [ 4:0]  mem_dest;
+    wire    [ 4:0]  wb_dest;
     wire            en_brch_cancel;
 
     assign  {
-        exe_gr_we, exe_dest
+        exe_en_bypass, exe_en_block, exe_dest, exe_wdata
     } = exe_wr_bus;
     assign  {
-        mem_gr_we, mem_dest
+        mem_en_bypass, mem_dest, mem_wdata
     } = mem_wr_bus;
-    assign {
-        wb_gr_we, wb_dest
-    } = wb_wr_bus;
-    assign id_ready_go =   ~(exe_gr_we & (exe_dest == rf_raddr1 | exe_dest == rf_raddr2) |
-                             mem_gr_we & (mem_dest == rf_raddr1 | mem_dest == rf_raddr2) |
-                             wb_gr_we  & (wb_dest  == rf_raddr1 | wb_dest  == rf_raddr2) );
+    assign id_ready_go = ~(exe_en_block&(exe_dest==rf_raddr1|exe_dest==rf_raddr2));
     assign id_exe_valid = id_ready_go & id_valid;
     assign id_allowin = id_exe_valid & exe_allowin | ~id_valid;
     always @(posedge clk ) begin
@@ -238,8 +236,12 @@ module ID (
         .wdata  (rf_wdata )
         );
 
-    assign rj_value  = rf_rdata1;
-    assign id_rkd_value = rf_rdata2;
+    assign rj_value  =  (exe_en_bypass & exe_dest == rf_raddr1)? exe_wdata :
+                        (mem_en_bypass & mem_dest == rf_raddr1)? mem_wdata :
+                        (rf_we         & rf_waddr == rf_raddr1)? rf_wdata  : rf_rdata1;
+    assign id_rkd_value =   (exe_en_bypass & exe_dest == rf_raddr2)? exe_wdata :
+                            (mem_en_bypass & mem_dest == rf_raddr2)? mem_wdata :
+                            (rf_we         & rf_waddr == rf_raddr2)? rf_wdata  : rf_rdata2;
 
     assign rj_eq_rd = (rj_value == id_rkd_value);
     assign id_en_brch = (   inst_beq  &&  rj_eq_rd

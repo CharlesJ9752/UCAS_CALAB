@@ -16,7 +16,7 @@ module EXE (
     output  [31:0]  data_sram_addr,
     output  [31:0]  data_sram_wdata,
     //写信号
-    output  [ 5:0]  exe_wr_bus
+    output  [ 38:0]  exe_wr_bus
 );
     //信号定义
     reg             exe_valid;
@@ -24,7 +24,8 @@ module EXE (
     wire    [ 31:0] exe_inst;
     wire    [ 31:0] exe_pc;
     reg     [179:0] id_exe_bus_vld;
-    
+    wire            exe_en_bypass;
+    wire            exe_en_block;
     assign  exe_ready_go = 1'b1;
     assign  exe_mem_valid = exe_ready_go & exe_valid;
     assign  exe_allowin = exe_mem_valid & mem_allowin | ~exe_valid;
@@ -73,10 +74,9 @@ module EXE (
         exe_pc, exe_inst, alu_result
     };
     //写信号
-    wire            to_id_exe_gr_we;
-    wire    [4:0]   to_id_exe_dest;
-    assign  {to_id_exe_gr_we, to_id_exe_dest} = {{exe_valid & exe_gr_we}, exe_dest};
-    assign  exe_wr_bus = {
-        to_id_exe_gr_we, to_id_exe_dest
+    assign  exe_en_bypass = exe_valid & exe_gr_we;
+    assign  exe_en_block = exe_valid & exe_res_from_mem;
+    assign exe_wr_bus = {
+        exe_en_bypass, exe_en_block, exe_dest, alu_result
     };
 endmodule
