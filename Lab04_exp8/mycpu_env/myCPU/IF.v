@@ -18,7 +18,7 @@ module IF (
     reg             if_valid;//有指令在if�?
     wire            if_ready_go;//指令可以去下�?个阶�?
     wire            if_allowin;//可接�?
-    wire            if_en_brch;//使能跳转
+    wire            en_brch_cancel;//使能跳转
     reg     [31:0]  if_pc;//if阶段的pc�?
     wire    [31:0]  if_inst;//if阶段的指�?
     wire    [31:0]  if_nextpc;//下一个pc
@@ -34,7 +34,7 @@ module IF (
         else if(if_allowin)begin
             if_valid <= 1'b1;
         end
-        else if(if_en_brch)begin
+        else if(en_brch_cancel)begin
             if_valid <= 1'b0;
         end
     end
@@ -42,8 +42,8 @@ module IF (
     assign  if_id_bus = { if_pc, if_inst };
     //更新pc
     assign  seq_pc = if_pc + 3'h4;
-    assign  { if_en_brch, if_brch_addr } = id_if_bus;
-    assign  if_nextpc = if_en_brch ? if_brch_addr : seq_pc;
+    assign  { en_brch_cancel, if_brch_addr} = id_if_bus;
+    assign  if_nextpc = en_brch_cancel ? if_brch_addr : seq_pc;
     always @(posedge clk ) begin
         if(~resetn)begin
             if_pc <= 32'h1bfffffc;

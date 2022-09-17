@@ -63,7 +63,7 @@ module mycpu_top(
         .id_exe_bus         (id_exe_bus),
         .wb_id_bus          (wb_id_bus),
         .exe_wr_bus         (exe_wr_bus),
-        .mem_wr_bus         (mem_wb_bus),
+        .mem_wr_bus         (mem_wr_bus),
         .wb_wr_bus          (wb_wr_bus)
     );
     EXE my_EXE (
@@ -91,7 +91,7 @@ module mycpu_top(
         .wb_allowin         (wb_allowin),
         .mem_wb_bus         (mem_wb_bus),
         .data_sram_rdata    (data_sram_rdata),
-        .mem_wr_bus         (mem_wb_bus)
+        .mem_wr_bus         (mem_wr_bus)
     );
     WB my_WB (
         .clk                (clk),

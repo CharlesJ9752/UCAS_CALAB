@@ -1,4 +1,4 @@
-//译码，生成操作数，写回寄存器堆
+//译码，生成操作数，写回寄存器�?
 module ID (
     input           clk,
     input           resetn,
@@ -13,20 +13,18 @@ module ID (
     output  [179:0] id_exe_bus,
     //来自WB阶段
     input   [37:0]  wb_id_bus,
-    //来自各级的写使能和写地址信号，用于判断阻塞
+    //来自各级的写使能和写地址信号，用于判断阻�?
     input   [5:0]   exe_wr_bus,
     input   [5:0]   mem_wr_bus,
     input   [5:0]   wb_wr_bus
 );
     //信号定义
-    reg             id_valid;//指令在id中
-    wire            id_ready_go;//可以去下个阶段
+    reg             id_valid;//指令在id�?
     wire    [31:0]  id_inst;
     wire    [31:0]  id_pc;
     wire            id_en_brch;
     wire    [31:0]  id_brch_addr;
     reg     [63:0]  if_id_bus_vld;
-
     //判断是否阻塞
     wire            exe_gr_we;
     wire            mem_gr_we;
@@ -34,6 +32,8 @@ module ID (
     wire    [4:0]   exe_dest;
     wire    [4:0]   mem_dest;
     wire    [4:0]   wb_dest;
+    wire            en_brch_cancel;
+
     assign  {
         exe_gr_we, exe_dest
     } = exe_wr_bus;
@@ -41,18 +41,18 @@ module ID (
         mem_gr_we, mem_dest
     } = mem_wr_bus;
     assign {
-        wb_wr_bus, wb_dest
+        wb_gr_we, wb_dest
     } = wb_wr_bus;
-    assign id_ready_go = exe_gr_we & (exe_dest == rf_raddr1 | exe_dest == rf_raddr2) ? 1'b0 :
-                         mem_gr_we & (mem_dest == rf_raddr1 | mem_dest == rf_raddr2) ? 1'b0 :
-                         wb_gr_we  & (wb_dest  == rf_raddr1 | wb_dest  == rf_raddr2) ? 1'b0 : 1'b1;
+    assign id_ready_go =   ~(exe_gr_we & (exe_dest == rf_raddr1 | exe_dest == rf_raddr2) |
+                             mem_gr_we & (mem_dest == rf_raddr1 | mem_dest == rf_raddr2) |
+                             wb_gr_we  & (wb_dest  == rf_raddr1 | wb_dest  == rf_raddr2) );
     assign id_exe_valid = id_ready_go & id_valid;
     assign id_allowin = id_exe_valid & exe_allowin | ~id_valid;
     always @(posedge clk ) begin
         if(~resetn) begin
             id_valid <= 1'b0;
         end
-        else if(id_en_brch) begin
+        else if(en_brch_cancel) begin
             id_valid <= 1'b0;
         end
         else if(id_allowin) begin
@@ -250,7 +250,6 @@ module ID (
     ) & id_valid;
     assign id_brch_addr = (inst_beq || inst_bne || inst_bl || inst_b) ? (id_pc + br_offs) :
                                                     /*inst_jirl*/ (rj_value + jirl_offs);
-    assign ds_to_fs_bus={id_en_brch,id_brch_addr};
     assign id_alu_src1 = src1_is_pc  ? id_pc : rj_value;
     assign id_alu_src2 = src2_is_imm ? imm : id_rkd_value;
     assign id_exe_bus = {
@@ -258,7 +257,8 @@ module ID (
         id_alu_op, id_alu_src1, id_alu_src2,
         id_dest, id_rkd_value, id_inst, id_pc
     };
+    assign en_brch_cancel = id_en_brch & id_ready_go;
     assign id_if_bus = {
-        id_en_brch, id_brch_addr
+        en_brch_cancel, id_brch_addr
     };
 endmodule
