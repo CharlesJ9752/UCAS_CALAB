@@ -14,7 +14,9 @@ module EXE (
     output          data_sram_en,
     output  [ 3:0]  data_sram_we,
     output  [31:0]  data_sram_addr,
-    output  [31:0]  data_sram_wdata
+    output  [31:0]  data_sram_wdata,
+    //写信号
+    output  [ 5:0]  exe_wr_bus
 );
     //信号定义
     reg             exe_valid;
@@ -40,18 +42,18 @@ module EXE (
         end
     end
     //接bus
-    wire            gr_we;
-    wire            mem_we;
-    wire            res_from_mem;
+    wire            exe_gr_we;
+    wire            exe_mem_we;
+    wire            exe_res_from_mem;
     wire    [11:0]  alu_op;
     wire    [31:0]  alu_src1;
     wire    [31:0]  alu_src2;
-    wire    [ 4:0]  dest;
-    wire    [31:0]  rkd_value;
+    wire    [ 4:0]  exe_dest;
+    wire    [31:0]  exe_rkd_value;
     assign {
-        gr_we, mem_we, res_from_mem,
+        exe_gr_we, exe_mem_we, exe_res_from_mem,
         alu_op, alu_src1, alu_src2,
-        dest, rkd_value, exe_inst, exe_pc
+        exe_dest, exe_rkd_value, exe_inst, exe_pc
     } = id_exe_bus_vld;
     //运行alu
     wire    [31:0]  alu_result;
@@ -63,11 +65,18 @@ module EXE (
     );
     //与数据存储器
     assign  data_sram_en = 1'b1;
-    assign  data_sram_we = {4{mem_we}};
+    assign  data_sram_we = {4{exe_mem_we}};
     assign  data_sram_addr = alu_result;
-    assign  data_sram_wdata = rkd_value;
-    assign exe_mem_bus = {
-        gr_we, res_from_mem, dest,
+    assign  data_sram_wdata = exe_rkd_value;
+    assign  exe_mem_bus = {
+        exe_gr_we, exe_res_from_mem, exe_dest,
         exe_pc, exe_inst, alu_result
+    };
+    //写信号
+    wire            to_id_exe_gr_we;
+    wire    [4:0]   to_id_exe_dest;
+    assign  {to_id_exe_gr_we, to_id_exe_dest} = {{exe_valid & exe_gr_we}, exe_dest};
+    assign  exe_wr_bus = {
+        to_id_exe_gr_we, to_id_exe_dest
     };
 endmodule
