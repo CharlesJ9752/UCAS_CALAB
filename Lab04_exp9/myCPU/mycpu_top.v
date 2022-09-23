@@ -34,9 +34,8 @@ module mycpu_top(
     wire            mem_wb_valid;
     wire    [101:0] mem_wb_bus;
     wire            wb_allowin;
-    wire    [5:0]   exe_wr_bus;
-    wire    [5:0]   mem_wr_bus;
-    wire    [5:0]   wb_wr_bus;
+    wire    [ 38:0] exe_wr_bus;
+    wire    [ 37:0] mem_wr_bus;
     //模块调用
     IF my_IF (
         .clk                (clk),
@@ -63,8 +62,7 @@ module mycpu_top(
         .id_exe_bus         (id_exe_bus),
         .wb_id_bus          (wb_id_bus),
         .exe_wr_bus         (exe_wr_bus),
-        .mem_wr_bus         (mem_wr_bus),
-        .wb_wr_bus          (wb_wr_bus)
+        .mem_wr_bus         (mem_wr_bus)
     );
     EXE my_EXE (
         .clk                (clk),
@@ -103,7 +101,6 @@ module mycpu_top(
         .debug_wb_pc        (debug_wb_pc),
         .debug_wb_rf_we     (debug_wb_rf_we),
         .debug_wb_rf_wnum   (debug_wb_rf_wnum),
-        .debug_wb_rf_wdata  (debug_wb_rf_wdata),
-        .wb_wr_bus          (wb_wr_bus)
+        .debug_wb_rf_wdata  (debug_wb_rf_wdata)
     );
 endmodule
