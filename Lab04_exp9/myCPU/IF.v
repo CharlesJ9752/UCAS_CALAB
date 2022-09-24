@@ -26,7 +26,7 @@ module IF (
     wire    [31:0]  seq_pc;//若顺序的pc
 
     assign  if_ready_go = 1'b1;
-    assign  if_allowin = ~resetn | if_ready_go & id_allowin;//还没�?始，或当前指令可以去下一�?
+    assign  if_allowin = ~resetn | if_ready_go & id_allowin;//还没开始，或当前指令可以去下一步
     always @(posedge clk ) begin
         if(~resetn)begin
             if_valid <= 1'b0;
