@@ -12,9 +12,7 @@ module WB (
     output  [ 31:0] debug_wb_pc,
     output  [  3:0] debug_wb_rf_we,
     output  [  4:0] debug_wb_rf_wnum,
-    output  [ 31:0] debug_wb_rf_wdata,
-    //写信号
-    output  [ 5:0]  wb_wr_bus
+    output  [ 31:0] debug_wb_rf_wdata
 );
     //信号定义
     reg             wb_valid;
@@ -56,11 +54,4 @@ module WB (
     assign  debug_wb_rf_we = {4{rf_we}};
     assign  debug_wb_rf_wnum = rf_waddr;
     assign  debug_wb_rf_wdata = wb_final_result;
-    //写信号
-    wire            to_id_wb_gr_we;
-    wire    [4:0]   to_id_wb_dest;
-    assign  {to_id_wb_gr_we, to_id_wb_dest} = {{wb_valid & wb_gr_we}, wb_dest};
-    assign  wb_wr_bus = {
-        to_id_wb_gr_we, to_id_wb_dest
-    };
 endmodule
