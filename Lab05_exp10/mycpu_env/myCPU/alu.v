@@ -19,10 +19,6 @@ wire op_sra;   //arithmetic right shift
 wire op_lui;   //Load Upper Immediate
 wire op_mull;
 wire op_mulh;
-wire op_div;
-wire op_divu;
-wire op_mod;
-wire op_modu;
 
 // control code decomposition
 assign op_add  = alu_op[ 0];
@@ -40,12 +36,6 @@ assign op_lui  = alu_op[11];
 assign op_mull = alu_op[12];
 assign op_mulh = alu_op[13];
 assign op_mulhu= alu_op[14];
-assign op_div  = alu_op[15];
-assign op_divu = alu_op[16];
-assign op_mod  = alu_op[17];
-assign op_modu = alu_op[18];
-
-
 
 wire [31:0] add_sub_result;
 wire [31:0] slt_result;

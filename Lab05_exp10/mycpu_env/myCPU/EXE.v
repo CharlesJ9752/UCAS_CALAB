@@ -1,4 +1,4 @@
-//运行alu，写存储�?
+//运行alu，写存储�??
 module EXE (
     input           clk,
     input           resetn,
@@ -15,7 +15,7 @@ module EXE (
     output  [ 3:0]  data_sram_we,
     output  [31:0]  data_sram_addr,
     output  [31:0]  data_sram_wdata,
-    //写信�?
+    //写信�??
     output  [ 38:0]  exe_wr_bus
 );
     //信号定义
@@ -26,10 +26,9 @@ module EXE (
     reg     [186:0] id_exe_bus_vld;
     wire            exe_en_bypass;
     wire            exe_en_block;
-    assign exe_ready_go    = 
-    (alu_op[15] || alu_op[17])     ? signed_dout_tvalid :
-    (alu_op[16] || alu_op[18])    ? unsigned_dout_tvalid :
-    1'b1;
+    assign exe_ready_go    = (alu_op[15] | alu_op[17]) & div_out_tvalid | 
+                             (alu_op[16] | alu_op[18]) & divu_out_tvalid |
+                             (~(alu_op[15]|alu_op[16]|alu_op[17]|alu_op[18]));
     assign  exe_mem_valid = exe_ready_go & exe_valid;
     assign  exe_allowin = exe_mem_valid & mem_allowin | ~exe_valid;
     always @(posedge clk ) begin
@@ -77,114 +76,134 @@ module EXE (
         exe_gr_we, exe_res_from_mem, exe_dest,
         exe_pc, exe_inst, exe_result
     };
-    //写信�?
+    //写信�??
     assign  exe_en_bypass = exe_valid & exe_gr_we;
     assign  exe_en_block = exe_valid & exe_res_from_mem;//in case of load
     assign exe_wr_bus = {
         exe_en_bypass, exe_en_block, exe_dest, exe_result
     };
     
-//���ó���IP
-assign exe_result=(alu_op[15])? signed_divider_res[63:32]:   
-                   (alu_op[16])? unsigned_divider_res[63:32]:
-                   (alu_op[17])? signed_divider_res[31:0]:   
-                   (alu_op[18])? unsigned_divider_res[31:0]:alu_result;
-                   
-                   
-wire [31:0] divider_dividend;
-wire [31:0] divider_divisor;
-wire [63:0] unsigned_divider_res;
-wire [63:0] signed_divider_res;
-assign divider_dividend = alu_src1;
-assign divider_divisor  = alu_src2;
-
-wire unsigned_dividend_tready;
-wire unsigned_dividend_tvalid;
-wire unsigned_divisor_tready;
-wire unsigned_divisor_tvalid;
-wire unsigned_dout_tvalid;
-
-wire signed_dividend_tready;
-wire signed_dividend_tvalid;
-wire signed_divisor_tready;
-wire signed_divisor_tvalid;
-wire signed_dout_tvalid;
-
-my_divu u_unsigned_divider (
-    .aclk                   (clk),
-    .s_axis_dividend_tdata  (divider_dividend),
-    .s_axis_dividend_tready (unsigned_dividend_tready),
-    .s_axis_dividend_tvalid (unsigned_dividend_tvalid),
-    .s_axis_divisor_tdata   (divider_divisor),
-    .s_axis_divisor_tready  (unsigned_divisor_tready),
-    .s_axis_divisor_tvalid  (unsigned_divisor_tvalid),
-    .m_axis_dout_tdata      (unsigned_divider_res),
-    .m_axis_dout_tvalid     (unsigned_dout_tvalid)
-);
-
-my_div u_signed_divider (
-    .aclk                   (clk),
-    .s_axis_dividend_tdata  (divider_dividend),
-    .s_axis_dividend_tready (signed_dividend_tready),
-    .s_axis_dividend_tvalid (signed_dividend_tvalid),
-    .s_axis_divisor_tdata   (divider_divisor),
-    .s_axis_divisor_tready  (signed_divisor_tready),
-    .s_axis_divisor_tvalid  (signed_divisor_tvalid),
-    .m_axis_dout_tdata      (signed_divider_res),
-    .m_axis_dout_tvalid     (signed_dout_tvalid)
-);
+//做除法
     
-reg  unsigned_dividend_sent;
-reg  unsigned_divisor_sent;
+    //信号定义
+    wire    [31:0]  div_src1;//有符号除法被除数
+    wire            div_src1_ready;
+    wire            div_src1_tvalid;
+    reg             div_src1_flag;   
 
-assign unsigned_dividend_tvalid = exe_valid && (alu_op[16] || alu_op[18]) && !unsigned_dividend_sent;
-assign unsigned_divisor_tvalid = exe_valid && (alu_op[16] || alu_op[18]) && !unsigned_divisor_sent;
+    wire    [31:0]  div_src2;//有符号除法除数
+    wire            div_src2_ready;
+    wire            div_src2_tvalid;
+    reg             div_src2_flag;
 
-always @ (posedge clk) begin
-    if (!resetn) begin
-        unsigned_dividend_sent <= 1'b0;
-    end else if (unsigned_dividend_tready && unsigned_dividend_tvalid) begin
-        unsigned_dividend_sent <= 1'b1;
-    end else if (exe_ready_go && mem_allowin) begin
-        unsigned_dividend_sent <= 1'b0;
+    wire    [63:0]  div_res;//有符号除法结果
+    wire    [31:0]  div_res_hi;
+    wire    [31:0]  div_res_lo;
+    wire            div_out_tvalid;//有符号除法返回值有效
+
+
+    wire    [31:0]  divu_src1;//无符号除法被除数
+    wire            divu_src1_ready;
+    wire            divu_src1_tvalid;
+    reg             divu_src1_flag;
+
+    wire    [31:0]  divu_src2;//无符号除法除数
+    wire            divu_src2_ready;
+    wire            divu_src2_tvalid;
+    reg             divu_src2_flag;
+
+    wire    [63:0]  divu_res;//无符号除法结果
+    wire    [31:0]  divu_res_hi;
+    wire    [31:0]  divu_res_lo;
+    wire            divu_out_tvalid;//无符号除法返回值有效
+
+    //有符号除法
+    always @(posedge clk ) begin
+        if(~resetn) begin
+            div_src1_flag <= 1'b0;
+        end
+        else if (div_src1_tvalid & div_src1_ready) begin
+            div_src1_flag <= 1'b1;
+        end
+        else if (exe_ready_go & mem_allowin) begin
+            div_src1_flag <= 1'b0;
+        end
     end
-    
-    if (!resetn) begin
-        unsigned_divisor_sent <= 1'b0;
-    end else if (unsigned_divisor_tready && unsigned_divisor_tvalid) begin
-        unsigned_divisor_sent <= 1'b1;
-    end else if (exe_ready_go && mem_allowin) begin
-        unsigned_divisor_sent <= 1'b0;
+    assign div_src1_tvalid = (alu_op[15] | alu_op[17]) & exe_valid & ~div_src1_flag;
+
+    always @(posedge clk ) begin
+        if(~resetn) begin
+            div_src2_flag <= 1'b0;
+        end
+        else if (div_src2_tvalid & div_src2_ready) begin
+            div_src2_flag <= 1'b1;
+        end
+        else if (exe_ready_go & mem_allowin) begin
+            div_src2_flag <= 1'b0;
+        end
     end
-end
+    assign div_src2_tvalid = (alu_op[15] | alu_op[17]) & exe_valid & ~div_src2_flag;
 
-reg  signed_dividend_sent;
-reg  signed_divisor_sent;
-
-assign signed_dividend_tvalid = exe_valid && (alu_op[15] || alu_op[17]) && !signed_dividend_sent;
-assign signed_divisor_tvalid = exe_valid && (alu_op[15] || alu_op[17]) && !signed_divisor_sent;
-
-always @ (posedge clk) begin
-    if (!resetn) begin
-        signed_dividend_sent <= 1'b0;
-    end else if (signed_dividend_tready && signed_dividend_tvalid) begin
-        signed_dividend_sent <= 1'b1;
-    end else if (exe_ready_go && mem_allowin) begin
-        signed_dividend_sent <= 1'b0;
+    assign div_src1 = alu_src1;
+    assign div_src2 = alu_src2;
+    my_div my_div (
+        .aclk                   (clk),
+        .s_axis_dividend_tdata  (div_src1),
+        .s_axis_dividend_tready (div_src1_ready),
+        .s_axis_dividend_tvalid (div_src1_tvalid),
+        .s_axis_divisor_tdata   (div_src2),
+        .s_axis_divisor_tready  (div_src2_ready),
+        .s_axis_divisor_tvalid  (div_src2_tvalid),
+        .m_axis_dout_tdata      (div_res),
+        .m_axis_dout_tvalid     (div_out_tvalid)
+    );
+    assign {div_res_hi, div_res_lo} = div_res;
+    //无符号除法
+    always @(posedge clk ) begin
+        if(~resetn) begin
+            divu_src1_flag <= 1'b0;
+        end
+        else if (divu_src1_tvalid & divu_src1_ready) begin
+            divu_src1_flag <= 1'b1;
+        end
+        else if (exe_ready_go & mem_allowin) begin
+            divu_src1_flag <= 1'b0;
+        end
     end
-    
-    if (!resetn) begin
-        signed_divisor_sent <= 1'b0;
-    end else if (signed_divisor_tready && signed_divisor_tvalid) begin
-        signed_divisor_sent <= 1'b1;
-    end else if (exe_ready_go && mem_allowin) begin
-        signed_divisor_sent <= 1'b0;
+    assign divu_src1_tvalid = (alu_op[16] | alu_op[18]) & exe_valid & ~divu_src1_flag;
+
+    always @(posedge clk ) begin
+        if(~resetn) begin
+            divu_src2_flag <= 1'b0;
+        end
+        else if (divu_src2_tvalid & divu_src2_ready) begin
+            divu_src2_flag <= 1'b1;
+        end
+        else if (exe_ready_go & mem_allowin) begin
+            divu_src2_flag <= 1'b0;
+        end
     end
+    assign divu_src2_tvalid = (alu_op[16] | alu_op[18]) & exe_valid & ~divu_src2_flag;
+    
+    assign divu_src1 = alu_src1;
+    assign divu_src2 = alu_src2;
+    my_divu my_divu (
+        .aclk                   (clk),
+        .s_axis_dividend_tdata  (divu_src1),
+        .s_axis_dividend_tready (divu_src1_ready),
+        .s_axis_dividend_tvalid (divu_src1_tvalid),
+        .s_axis_divisor_tdata   (divu_src2),
+        .s_axis_divisor_tready  (divu_src2_ready),
+        .s_axis_divisor_tvalid  (divu_src2_tvalid),
+        .m_axis_dout_tdata      (divu_res),
+        .m_axis_dout_tvalid     (divu_out_tvalid)
+    );
+    assign {divu_res_hi, divu_res_lo} = divu_res;
 
-end
+    assign  exe_result =    alu_op[15] ? div_res_hi :
+                            alu_op[17] ? div_res_lo :
+                            alu_op[16] ? divu_res_hi :
+                            alu_op[18] ? divu_res_lo :
+                                         alu_result;
 
-    
-    
-    
-    
 endmodule

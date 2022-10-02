@@ -43,18 +43,16 @@ module ID (
     assign  {
         mem_en_bypass, mem_dest, mem_wdata
     } = mem_wr_bus;
-    assign addr1_valid = inst_add_w | inst_sub_w | inst_slt | inst_addi_w | inst_sltu | 
+    assign addr1_valid =    inst_add_w | inst_sub_w | inst_slt | inst_addi_w | inst_sltu | 
                             inst_nor | inst_and | inst_or | inst_xor | inst_srli_w | 
                             inst_slli_w | inst_srai_w | inst_ld_w | inst_st_w |inst_bne  | inst_beq | inst_jirl |
-                            inst_slti | inst_sltui | inst_andi | inst_ori | inst_xori |
-                            inst_sll_w | inst_srl_w | inst_sra_w | 
-                            inst_mul_w | inst_mulh_w | inst_mulh_wu | inst_div_w | inst_div_wu | inst_mod_w | inst_mod_wu;
-    assign addr2_valid = inst_add_w | inst_sub_w | inst_slt | inst_sltu | inst_and | 
-                         inst_or | inst_nor | inst_xor | inst_st_w | inst_beq | inst_bne |
-                         inst_sll_w | inst_srl_w | inst_sra_w |
-                         inst_sll_w | inst_srl_w | inst_sra_w | 
-                         inst_mul_w | inst_mulh_w | inst_mulh_wu | inst_div_w | inst_div_wu | inst_mod_w | inst_mod_wu;
-
+                            inst_slti | inst_sltui | inst_andi | inst_ori |inst_xori |
+                            inst_sll_w | inst_srl_w | inst_sra_w | inst_mul_w | inst_mulh_w | inst_mulh_wu |
+                            inst_div_w | inst_mod_w | inst_div_wu | inst_mod_wu;
+    assign addr2_valid =    inst_add_w | inst_sub_w | inst_slt | inst_sltu | inst_and | 
+                            inst_or | inst_nor | inst_xor | inst_st_w | inst_beq | inst_bne |
+                            inst_sll_w | inst_srl_w | inst_sra_w | inst_mul_w | inst_mulh_w | inst_mulh_wu |
+                            inst_div_w | inst_mod_w | inst_div_wu | inst_mod_wu;
     assign id_ready_go = ~( exe_en_block & ((exe_dest==rf_raddr1) & addr1_valid
                                             |(exe_dest==rf_raddr2) & addr2_valid));//in case of load
     assign id_exe_valid = id_ready_go & id_valid;
