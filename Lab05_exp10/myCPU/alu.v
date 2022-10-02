@@ -1,5 +1,5 @@
 module alu(
-  input  wire [11:0] alu_op,
+  input  wire [18:0] alu_op,
   input  wire [31:0] alu_src1,
   input  wire [31:0] alu_src2,
   output wire [31:0] alu_result
@@ -17,6 +17,8 @@ wire op_sll;   //logic left shift
 wire op_srl;   //logic right shift
 wire op_sra;   //arithmetic right shift
 wire op_lui;   //Load Upper Immediate
+wire op_mull;
+wire op_mulh;
 
 // control code decomposition
 assign op_add  = alu_op[ 0];
@@ -31,6 +33,9 @@ assign op_sll  = alu_op[ 8];
 assign op_srl  = alu_op[ 9];
 assign op_sra  = alu_op[10];
 assign op_lui  = alu_op[11];
+assign op_mull = alu_op[12];
+assign op_mulh = alu_op[13];
+assign op_mulhu= alu_op[14];
 
 wire [31:0] add_sub_result;
 wire [31:0] slt_result;
@@ -43,7 +48,12 @@ wire [31:0] lui_result;
 wire [31:0] sll_result;
 wire [63:0] sr64_result;
 wire [31:0] sr_result;
+wire [31:0] mull_result;
+wire [31:0] mulh_result;
+wire [31:0] mulhu_result;
 
+wire [63:0] muls_result;
+wire [63:0] mulu_result;
 
 // 32-bit adder
 wire [31:0] adder_a;
@@ -75,6 +85,11 @@ assign or_result  = alu_src1 | alu_src2;
 assign nor_result = ~or_result;
 assign xor_result = alu_src1 ^ alu_src2;
 assign lui_result = alu_src2;
+assign muls_result = $signed(alu_src1) * $signed(alu_src2);
+assign mulu_result = alu_src1 * alu_src2;
+assign mull_result = muls_result[31:0];
+assign mulh_result = muls_result[63:32];
+assign mulhu_result= mulu_result[63:32];
 
 // SLL result
 assign sll_result = alu_src1 << alu_src2[4:0];   //rj << i5
@@ -94,6 +109,9 @@ assign alu_result = ({32{op_add|op_sub}} & add_sub_result)
                   | ({32{op_xor       }} & xor_result)
                   | ({32{op_lui       }} & lui_result)
                   | ({32{op_sll       }} & sll_result)
-                  | ({32{op_srl|op_sra}} & sr_result);
+                  | ({32{op_srl|op_sra}} & sr_result)
+                  | ({32{op_mull      }} & mull_result)
+                  | ({32{op_mulh      }} & mulh_result)
+                  | ({32{op_mulhu     }} & mulhu_result);
 
 endmodule
