@@ -68,43 +68,21 @@ module EXE (
         .alu_result(alu_result)
     );
     //与数据存储器
-    wire            inst_st_w;
-    wire            inst_st_h;
-    wire            inst_st_b;
-
-    assign  inst_st_w = exe_inst[31:22] == 10'b0010100110;
-    assign  inst_st_h = exe_inst[31:22] == 10'b0010100101;
-    assign  inst_st_b = exe_inst[31:22] == 10'b0010100100;
-
-    wire    [ 1:0]  vaddr;
-    wire    [ 3:0]  strb;
-    wire    [31:0]  wr_data;
-    
-    assign  vaddr   =   alu_result[1:0];
-    assign  strb    =   {4{inst_st_w}} & 4'b1111 |
-                        {4{inst_st_h}} & {{2{vaddr[1]}},{2{~vaddr[1]}}} |
-                        {4{inst_st_b}} & {vaddr[1]&vaddr[0],vaddr[1]&~vaddr[0],~vaddr[1]&vaddr[0],~vaddr[1]&~vaddr[0]};
-    assign  wr_data =   {32{inst_st_w}} & exe_rkd_value |
-                        {32{inst_st_h}} & {2{exe_rkd_value[15:0]}} |
-                        {32{inst_st_b}} & {4{exe_rkd_value[7:0]}};
-
     assign  data_sram_en = 1'b1;
-    assign  data_sram_we = {4{exe_mem_we}} & strb;
-    assign  data_sram_addr = {alu_result[31:2],2'b00}; //assign  data_sram_addr = {alu_result};
-    assign  data_sram_wdata = wr_data;
+    assign  data_sram_we = {4{exe_mem_we}};
+    assign  data_sram_addr = alu_result;
+    assign  data_sram_wdata = exe_rkd_value;
     assign  exe_mem_bus = {
         exe_gr_we, exe_res_from_mem, exe_dest,
         exe_pc, exe_inst, exe_result
     };
-
-    //前递和阻塞
+    //写信�??
     assign  exe_en_bypass = exe_valid & exe_gr_we;
     assign  exe_en_block = exe_valid & exe_res_from_mem;//in case of load
     assign exe_wr_bus = {
         exe_en_bypass, exe_en_block, exe_dest, exe_result
     };
-
-  
+    
 //做除法
     
     //信号定义
