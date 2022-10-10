@@ -45,14 +45,19 @@ module ID (
     } = mem_wr_bus;
     assign addr1_valid =    inst_add_w | inst_sub_w | inst_slt | inst_addi_w | inst_sltu | 
                             inst_nor | inst_and | inst_or | inst_xor | inst_srli_w | 
-                            inst_slli_w | inst_srai_w | inst_ld_w | inst_st_w |inst_bne  | inst_beq | inst_jirl |
-                            inst_slti | inst_sltui | inst_andi | inst_ori |inst_xori |
+                            inst_slli_w | inst_srai_w | inst_slti | inst_sltui | inst_andi | inst_ori |inst_xori |
                             inst_sll_w | inst_srl_w | inst_sra_w | inst_mul_w | inst_mulh_w | inst_mulh_wu |
-                            inst_div_w | inst_mod_w | inst_div_wu | inst_mod_wu;
+                            inst_div_w | inst_mod_w | inst_div_wu | inst_mod_wu |
+
+                            inst_ld_w | inst_ld_b | inst_ld_bu | inst_ld_h | inst_ld_hu |
+                            inst_st_w | inst_st_b | inst_st_h |
+
+                            inst_bne | inst_beq | inst_jirl | inst_blt | inst_bge | inst_bltu | inst_bgeu;
     assign addr2_valid =    inst_add_w | inst_sub_w | inst_slt | inst_sltu | inst_and | 
-                            inst_or | inst_nor | inst_xor | inst_st_w | inst_beq | inst_bne |
+                            inst_or | inst_nor | inst_xor |
                             inst_sll_w | inst_srl_w | inst_sra_w | inst_mul_w | inst_mulh_w | inst_mulh_wu |
-                            inst_div_w | inst_mod_w | inst_div_wu | inst_mod_wu;
+                            inst_div_w | inst_mod_w | inst_div_wu | inst_mod_wu |
+                            inst_beq | inst_bne | inst_blt | inst_bge | inst_bltu | inst_bgeu | inst_st_w | inst_st_b | inst_st_h;
     assign id_ready_go = ~( exe_en_block & ((exe_dest==rf_raddr1) & addr1_valid
                                             |(exe_dest==rf_raddr2) & addr2_valid));//in case of load
     assign id_exe_valid = id_ready_go & id_valid;
@@ -126,6 +131,16 @@ module ID (
     wire        inst_mul_w;
     wire        inst_mulh_w;
     wire        inst_mulh_wu;
+    wire        inst_blt;
+    wire        inst_bge;
+    wire        inst_bltu;
+    wire        inst_bgeu;
+    wire        inst_ld_b;
+    wire        inst_ld_h;
+    wire        inst_ld_bu;
+    wire        inst_ld_hu;
+    wire        inst_st_b;
+    wire        inst_st_h;    
 
     wire        need_ui5;
     wire        need_si12;
@@ -203,16 +218,29 @@ module ID (
     assign inst_srl_w  = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h0f];
     assign inst_sra_w  = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h10];
     assign inst_pcaddu12i = op_31_26_d[6'h07] & ~id_inst[25];
-    assign inst_mul_w  = op_31_26_d[6'h0] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h18];
-    assign inst_mulh_w = op_31_26_d[6'h0] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h19];
-    assign inst_mulh_wu= op_31_26_d[6'h0] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h1a];
-    assign inst_div_w  = op_31_26_d[6'h0] & op_25_22_d[4'h0] & op_21_20_d[2'h2] & op_19_15_d[5'h00];
-    assign inst_mod_w  = op_31_26_d[6'h0] & op_25_22_d[4'h0] & op_21_20_d[2'h2] & op_19_15_d[5'h01];
-    assign inst_div_wu = op_31_26_d[6'h0] & op_25_22_d[4'h0] & op_21_20_d[2'h2] & op_19_15_d[5'h02];
-    assign inst_mod_wu = op_31_26_d[6'h0] & op_25_22_d[4'h0] & op_21_20_d[2'h2] & op_19_15_d[5'h03];
+    assign inst_mul_w  = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h18];
+    assign inst_mulh_w = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h19];
+    assign inst_mulh_wu= op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h1] & op_19_15_d[5'h1a];
+    assign inst_div_w  = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h2] & op_19_15_d[5'h00];
+    assign inst_mod_w  = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h2] & op_19_15_d[5'h01];
+    assign inst_div_wu = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h2] & op_19_15_d[5'h02];
+    assign inst_mod_wu = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'h2] & op_19_15_d[5'h03];
+    assign inst_blt    = op_31_26_d[6'h18];
+    assign inst_bge    = op_31_26_d[6'h19];
+    assign inst_bltu   = op_31_26_d[6'h1a];
+    assign inst_bgeu   = op_31_26_d[6'h1b];
+    assign inst_ld_b   = op_31_26_d[6'h0a] & op_25_22_d[4'h0];
+    assign inst_ld_h   = op_31_26_d[6'h0a] & op_25_22_d[4'h1];
+    assign inst_ld_bu  = op_31_26_d[6'h0a] & op_25_22_d[4'h8];
+    assign inst_ld_hu  = op_31_26_d[6'h0a] & op_25_22_d[4'h9];
+    assign inst_st_b   = op_31_26_d[6'h0a] & op_25_22_d[4'h4];
+    assign inst_st_h   = op_31_26_d[6'h0a] & op_25_22_d[4'h5];
+
+
+
 
     assign id_alu_op[ 0] = inst_add_w | inst_addi_w | inst_ld_w | inst_st_w
-                        | inst_jirl | inst_bl | inst_pcaddu12i;
+                        | inst_jirl | inst_bl | inst_pcaddu12i | inst_ld_b | inst_ld_bu | inst_ld_h | inst_ld_hu | inst_st_b | inst_st_h;
     assign id_alu_op[ 1] = inst_sub_w;
     assign id_alu_op[ 2] = inst_slt | inst_slti;
     assign id_alu_op[ 3] = inst_sltu | inst_sltui;
@@ -233,7 +261,7 @@ module ID (
     assign id_alu_op[18] = inst_mod_wu;
 
     assign need_ui5   =  inst_slli_w | inst_srli_w | inst_srai_w;
-    assign need_si12  =  inst_addi_w | inst_ld_w | inst_st_w;
+    assign need_si12  =  inst_addi_w | inst_ld_w | inst_ld_b | inst_ld_bu | inst_ld_h | inst_st_w | inst_ld_hu | inst_st_h | inst_st_b;//add st,ld
     assign need_si16  =  inst_jirl | inst_beq | inst_bne;
     assign need_si20  =  inst_lu12i_w | inst_pcaddu12i;
     assign need_si26  =  inst_b | inst_bl;
@@ -250,7 +278,8 @@ module ID (
 
     assign jirl_offs = {{14{i16[15]}}, i16[15:0], 2'b0};
 
-    assign src_reg_is_rd = inst_beq | inst_bne | inst_st_w;
+    assign src_reg_is_rd = inst_beq | inst_bne | inst_st_w  | inst_st_b  | inst_st_h |
+                        inst_blt  | inst_bge | inst_bltu | inst_bgeu;                            //change 1
 
     assign src1_is_pc    = inst_jirl | inst_bl | inst_pcaddu12i;
 
@@ -268,12 +297,19 @@ module ID (
                         inst_andi   |
                         inst_ori    |
                         inst_xori   |
-                        inst_pcaddu12i;
+                        inst_pcaddu12i |
+                        inst_ld_b |
+                        inst_ld_bu |
+                        inst_ld_h |
+                        inst_ld_hu |
+                        inst_st_b |
+                        inst_st_h;                                                               //change 2
 
-    assign id_res_from_mem  = inst_ld_w;
+    assign id_res_from_mem  = inst_ld_w | inst_ld_b | inst_ld_bu | inst_ld_h | inst_ld_hu;       //change 3
     assign dst_is_r1     = inst_bl;
-    assign id_gr_we         = ~inst_st_w & ~inst_beq & ~inst_bne & ~inst_b;
-    assign id_mem_we        = inst_st_w;
+    assign id_gr_we         = ~inst_st_w & ~inst_beq & ~inst_bne & ~inst_b &
+                              ~inst_st_b & ~inst_st_h & ~inst_blt & ~inst_bge & ~inst_bltu & ~inst_bgeu  ; //change 4
+    assign id_mem_we        = inst_st_w | inst_st_b | inst_st_h;                                 //change 5
     assign id_dest          = dst_is_r1 ? 5'd1 : rd;
 
     assign rf_raddr1 = rj;
@@ -300,15 +336,21 @@ module ID (
                             (rf_we         & (rf_waddr == rf_raddr2) & addr2_valid)? rf_wdata  : rf_rdata2;
 
     assign rj_eq_rd = (rj_value == id_rkd_value);
+    assign rj_less_rd =($signed(rj_value) < $signed(id_rkd_value));   //需要加上signed                                      //change 6
+    assign rj_lessu_rd =($unsigned(rj_value) < $unsigned(id_rkd_value));                    //change 7
     assign id_en_brch = (   inst_beq  &&  rj_eq_rd
                     || inst_bne  && !rj_eq_rd
+                    || inst_blt && rj_less_rd
+                    || inst_bltu && rj_lessu_rd
+                    || inst_bge && !rj_less_rd
+                    || inst_bgeu && !rj_lessu_rd                                         //change 8
                     || inst_jirl
                     || inst_bl
                     || inst_b
     ) & id_valid;
     assign en_brch_cancel = id_en_brch & id_ready_go;
-    assign id_brch_addr = (inst_beq || inst_bne || inst_bl || inst_b) ? (id_pc + br_offs) :
-                                                    /*inst_jirl*/ (rj_value + jirl_offs);
+    assign id_brch_addr = (inst_beq || inst_bne || inst_bl || inst_b || inst_blt || inst_bge || inst_bltu || inst_bgeu) 
+    ? (id_pc + br_offs) :    /*inst_jirl*/ (rj_value + jirl_offs);                     // change 9
     assign id_if_bus = {
         en_brch_cancel, id_brch_addr
     };
