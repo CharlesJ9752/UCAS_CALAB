@@ -1,31 +1,64 @@
-//运行alu，写存储�??
+`include "mycpu.h"
+//运行alu，写存储器
 module EXE (
-    input           clk,
-    input           resetn,
+    input                                   clk,
+    input                                   resetn,
     //与ID阶段
-    output          exe_allowin,
-    input           id_exe_valid,
-    input   [186:0] id_exe_bus,
+    output                                  exe_allowin,
+    input                                   id_exe_valid,
+    input   [`ID_EXE_BUS_WDTH - 1:0]        id_exe_bus,
     //与MEM阶段
-    output          exe_mem_valid,
-    input           mem_allowin,
-    output  [102:0] exe_mem_bus,
+    output                                  exe_mem_valid,
+    input                                   mem_allowin,
+    output  [`EXE_MEM_BUS_WDTH - 1:0]       exe_mem_bus,
     //与数据存储器
-    output          data_sram_en,
-    output  [ 3:0]  data_sram_we,
-    output  [31:0]  data_sram_addr,
-    output  [31:0]  data_sram_wdata,
+    output                                  data_sram_en,
+    output  [ 3:0]                          data_sram_we,
+    output  [31:0]                          data_sram_addr,
+    output  [31:0]                          data_sram_wdata,
     //写信�??
-    output  [ 38:0]  exe_wr_bus
+    output  [`EXE_WR_BUS_WDTH - 1:0]        exe_wr_bus,
+    //csr信号
+    output  [`EXE_CSR_BLK_BUS_WDTH - 1:0]   exe_csr_blk_bus,
+    //中断和异常信号
+    input                                   wb_exc,
+    input                                   ertn_flush,
+    input                                   mem_exc,
+    input                                   mem_ertn
 );
-    //信号定义
-    reg             exe_valid;
-    wire            exe_ready_go;
-    wire    [ 31:0] exe_inst;
-    wire    [ 31:0] exe_pc;
-    reg     [186:0] id_exe_bus_vld;
-    wire            exe_en_bypass;
-    wire            exe_en_block;
+//信号定义
+    //控制信号
+    reg                                 exe_valid;
+    wire                                exe_ready_go;
+    //pc和指令
+    wire    [ 31:0]                     exe_inst;
+    wire    [ 31:0]                     exe_pc;
+    //阻塞和前递
+    wire                                exe_en_bypass;
+    wire                                exe_en_block;
+    //bus通路
+    reg     [`ID_EXE_BUS_WDTH - 1:0]    id_exe_bus_vld;
+    wire                                exe_gr_we;
+    wire                                exe_mem_we;
+    wire                                exe_res_from_mem;
+    wire    [18:0]                      alu_op;
+    wire    [31:0]                      alu_src1;
+    wire    [31:0]                      alu_src2;
+    wire    [ 4:0]                      exe_dest;
+    wire    [31:0]                      exe_rkd_value;
+    wire                                exe_inst_ertn;
+    wire    [31:0]                      exe_result;  
+    //csr信号
+    wire                                exe_csr_we;
+    wire                                exe_csr_re;
+    wire [13:0]                         exe_csr_waddr;
+    wire [31:0]                         exe_csr_wdata;
+    wire [31:0]                         exe_csr_rdata;
+    wire [31:0]                         exe_csr_wmask;
+    //中断和异常标志
+    wire [`NUM_TYPES - 1:0]              id_exc_type;
+    wire [`NUM_TYPES - 1:0]              exe_exc_type;
+//控制信号的赋值
     assign exe_ready_go    = (alu_op[15] | alu_op[17]) & div_out_tvalid | 
                              (alu_op[16] | alu_op[18]) & divu_out_tvalid |
                              (~(alu_op[15]|alu_op[16]|alu_op[17]|alu_op[18]));
@@ -35,79 +68,39 @@ module EXE (
         if (~resetn) begin
             exe_valid <= 1'b0;
         end
-        else if(exe_allowin) begin
+        else if (wb_exc | ertn_flush) begin
+            exe_valid <= 1'b0;
+        end else  if(exe_allowin) begin
             exe_valid <= id_exe_valid;
         end
     end
+//主bus连接
     always @(posedge clk ) begin
         if (id_exe_valid & exe_allowin) begin
             id_exe_bus_vld <= id_exe_bus; 
         end
     end
-    //接bus
-    wire            exe_gr_we;
-    wire            exe_mem_we;
-    wire            exe_res_from_mem;
-    wire    [18:0]  alu_op;
-    wire    [31:0]  alu_src1;
-    wire    [31:0]  alu_src2;
-    wire    [ 4:0]  exe_dest;
-    wire    [31:0]  exe_rkd_value;
-    assign {
-        exe_gr_we, exe_mem_we, exe_res_from_mem,
+    assign { exe_csr_we, exe_csr_re, exe_csr_waddr, exe_csr_wmask, exe_csr_wdata, exe_csr_rdata,   //112 bits
+        exe_inst_ertn, id_exc_type,                                                         //7 bits
+        exe_gr_we, exe_mem_we, exe_res_from_mem, 
         alu_op, alu_src1, alu_src2,
         exe_dest, exe_rkd_value, exe_inst, exe_pc
-    } = id_exe_bus_vld;
-    //运行alu
+    }=id_exe_bus_vld;
+    assign  exe_mem_bus = {exe_csr_we,exe_csr_waddr,exe_csr_wmask,
+         exe_csr_wdata,exe_inst_ertn,exe_exc_type,
+        exe_gr_we, exe_res_from_mem, exe_dest,
+        exe_pc, exe_inst, exe_result
+    };
+//运行alu
+    //alu
     wire    [31:0]  alu_result;
-    wire    [31:0]  exe_result;
     alu my_alu (
         .alu_op(alu_op),
         .alu_src1(alu_src1),
         .alu_src2(alu_src2),
         .alu_result(alu_result)
     );
-    //与数据存储器
-    wire            inst_st_w;
-    wire            inst_st_h;
-    wire            inst_st_b;
-
-    assign  inst_st_w = exe_inst[31:22] == 10'b0010100110;
-    assign  inst_st_h = exe_inst[31:22] == 10'b0010100101;
-    assign  inst_st_b = exe_inst[31:22] == 10'b0010100100;
-
-    wire    [ 1:0]  vaddr;
-    wire    [ 3:0]  strb;
-    wire    [31:0]  wr_data;
-    
-    assign  vaddr   =   alu_result[1:0];
-    assign  strb    =   {4{inst_st_w}} & 4'b1111 |
-                        {4{inst_st_h}} & {{2{vaddr[1]}},{2{~vaddr[1]}}} |
-                        {4{inst_st_b}} & {vaddr[1]&vaddr[0],vaddr[1]&~vaddr[0],~vaddr[1]&vaddr[0],~vaddr[1]&~vaddr[0]};
-    assign  wr_data =   {32{inst_st_w}} & exe_rkd_value |
-                        {32{inst_st_h}} & {2{exe_rkd_value[15:0]}} |
-                        {32{inst_st_b}} & {4{exe_rkd_value[7:0]}};
-
-    assign  data_sram_en = 1'b1;
-    assign  data_sram_we = {4{exe_mem_we}} & strb;
-    assign  data_sram_addr = {alu_result[31:2],2'b00}; //assign  data_sram_addr = {alu_result};
-    assign  data_sram_wdata = wr_data;
-    assign  exe_mem_bus = {
-        exe_gr_we, exe_res_from_mem, exe_dest,
-        exe_pc, exe_inst, exe_result
-    };
-
-    //前递和阻塞
-    assign  exe_en_bypass = exe_valid & exe_gr_we;
-    assign  exe_en_block = exe_valid & exe_res_from_mem;//in case of load
-    assign exe_wr_bus = {
-        exe_en_bypass, exe_en_block, exe_dest, exe_result
-    };
-
-  
-//做除法
-    
-    //信号定义
+    //除法器
     wire    [31:0]  div_src1;//有符号除法被除数
     wire            div_src1_ready;
     wire            div_src1_tvalid;
@@ -221,11 +214,57 @@ module EXE (
         .m_axis_dout_tvalid     (divu_out_tvalid)
     );
     assign {divu_res_hi, divu_res_lo} = divu_res;
+//中断和异常标志
+    assign exe_exc_type = id_exc_type;
+    assign exe_exc = |exe_exc_type & exe_valid; 
+    assign exe_ertn = exe_inst_ertn & exe_valid;
+//阻塞和前递
+    //regfile
+    assign  exe_en_bypass = exe_valid & exe_gr_we;
+    assign  exe_en_block = exe_valid & exe_res_from_mem;//in case of load
+    assign exe_wr_bus = {
+        exe_en_bypass, exe_en_block, exe_dest, exe_result
+    };
+    //csr
+    assign exe_csr_blk_bus = {
+        exe_csr_we & exe_valid, exe_ertn, exe_csr_waddr
+    };
+//写存储器
+    wire            inst_st_w;
+    wire            inst_st_h;
+    wire            inst_st_b;
 
-    assign  exe_result =    alu_op[15] ? div_res_hi :
+    assign  inst_st_w = exe_inst[31:22] == 10'b0010100110;
+    assign  inst_st_h = exe_inst[31:22] == 10'b0010100101;
+    assign  inst_st_b = exe_inst[31:22] == 10'b0010100100;
+
+    wire    [ 1:0]  vaddr;
+    wire    [ 3:0]  strb;
+    wire    [31:0]  wr_data;
+    
+    assign  vaddr   =   alu_result[1:0];
+    assign  strb    =   {4{inst_st_w}} & 4'b1111 |
+                        {4{inst_st_h}} & {{2{vaddr[1]}},{2{~vaddr[1]}}} |
+                        {4{inst_st_b}} & {vaddr[1]&vaddr[0],vaddr[1]&~vaddr[0],~vaddr[1]&vaddr[0],~vaddr[1]&~vaddr[0]};
+    assign  wr_data =   {32{inst_st_w}} & exe_rkd_value |
+                        {32{inst_st_h}} & {2{exe_rkd_value[15:0]}} |
+                        {32{inst_st_b}} & {4{exe_rkd_value[7:0]}};
+    assign  find_exc_ertn =wb_exc | mem_exc | exe_exc | ertn_flush | mem_ertn | exe_ertn;
+
+    assign  data_sram_en = ~find_exc_ertn;
+    assign  data_sram_we = {4{exe_mem_we}} & strb;
+    assign  data_sram_addr = {alu_result[31:2],2'b00}; //assign  data_sram_addr = {alu_result};
+    assign  data_sram_wdata = wr_data;
+    assign  exe_mem_bus = {exe_csr_we,exe_csr_waddr,exe_csr_wmask,
+         exe_csr_wdata,exe_inst_ertn,exe_exc_type,
+        exe_gr_we, exe_res_from_mem, exe_dest,
+        exe_pc, exe_inst, exe_result
+    };
+//exe阶段最终结果
+    assign  exe_result =    exe_csr_re ? exe_csr_rdata:
+                            alu_op[15] ? div_res_hi :
                             alu_op[17] ? div_res_lo :
                             alu_op[16] ? divu_res_hi :
                             alu_op[18] ? divu_res_lo :
                                          alu_result;
-
 endmodule
