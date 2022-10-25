@@ -51,7 +51,7 @@ module MEM (
 //控制信号的赋值
     assign  mem_ready_go = 1'b1;
     assign  mem_wb_valid = mem_ready_go & mem_valid;
-    assign  mem_allowin = mem_ready_go & wb_allowin | ~mem_valid;
+    assign  mem_allowin = mem_wb_valid & wb_allowin | ~mem_valid;
     always @(posedge clk ) begin
         if (~resetn) begin
             mem_valid <= 1'b0;
@@ -103,16 +103,11 @@ module MEM (
                             {32{inst_ld_h | inst_ld_hu}} & half_xtnd |
                             {32{inst_ld_w             }} & word      ;
 
-    assign  mem_final_result =  mem_exc_type[`TYPE_ALE] ?   alu_result      ://new added(unsure)
-                                res_from_mem            ?   mem_ld_result   : 
-                                                            alu_result      ;
-    /*
+    assign  mem_final_result = res_from_mem ? mem_ld_result : alu_result;
     assign  mem_wb_bus = {mem_csr_we,mem_csr_waddr,
         mem_csr_wmask,mem_csr_wdata,mem_inst_ertn,mem_exc_type,
         mem_gr_we, mem_pc, mem_inst, mem_final_result, mem_dest
     };
-    */
-    //???????
     assign mem_exc = (|mem_exc_type) & mem_valid;
 //阻塞和前递
     assign  mem_en_bypass = mem_valid & mem_gr_we;

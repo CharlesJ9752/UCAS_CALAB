@@ -11,7 +11,7 @@ module ID (
     //与EXE阶段
     input                                   exe_allowin,
     output                                  id_exe_valid,
-    output  [`ID_EXE_BUS_WDTH - 1:0]        id_exe_bus,//add 2bits
+    output  [`ID_EXE_BUS_WDTH - 1:0]        id_exe_bus,//add 112 bits + 7 bits
     //来自WB阶段
     input   [`WB_ID_BUS_WDTH - 1:0]         wb_id_bus,
     //阻塞和前递信号
@@ -19,7 +19,6 @@ module ID (
     input   [`MEM_WR_BUS_WDTH - 1:0]        mem_wr_bus,
     //异常&中断
     input                                   wb_exc,
-    input                                   csr_has_int,
     //与csr寄存器
     input   [31:0]                          csr_rdata,
     output  [13:0]                          csr_raddr,
@@ -51,7 +50,7 @@ module ID (
     wire    [ 4:0]                          wb_dest;
     wire                                    en_brch_cancel;
     //异常和中断
-    wire [`NUM_TYPES - 1:0]                 id_exc_type;
+    wire [`NUM_TYPES - 1:0]                  id_exc_type;
     //csr
     wire                                    id_csr_we;
     wire                                    id_csr_re;
@@ -74,14 +73,12 @@ module ID (
     wire [13:0]                             wb_csr_waddr;
 
     wire                                    csr_blk;
-            
-
-
+    
 //控制信号的赋值
     assign id_ready_go = ~csr_blk & ~( exe_en_block & ((exe_dest==rf_raddr1) & addr1_valid //untest
                                     |(exe_dest==rf_raddr2) & addr2_valid));//in case of load
     assign id_exe_valid = id_ready_go & id_valid;
-    assign id_allowin = id_ready_go & exe_allowin | ~id_valid;
+    assign id_allowin = id_exe_valid & exe_allowin | ~id_valid;
     always @(posedge clk ) begin
         if(~resetn) begin
             id_valid <= 1'b0;
@@ -106,7 +103,6 @@ module ID (
         id_pc, id_inst
     } = if_id_bus_vld;
     assign id_exe_bus = {
-        id_rdcn_en, id_rdcn_sel, //lzc: new added
         id_csr_we, id_csr_re, id_csr_waddr, id_csr_wmask, id_csr_wdata, id_csr_rdata,   //112 bits
         inst_ertn, id_exc_type,                                                         //7 bits
         id_gr_we, id_mem_we, id_res_from_mem, 
@@ -181,23 +177,6 @@ module ID (
     wire        inst_csrwr;
     wire        inst_csrxchg;
     wire        inst_ertn;
-
-
-    /**new added**/
-    //break
-    wire        inst_break;     
-    //timer inst
-    wire        inst_rdcntid_w; 
-    wire        inst_rdcntvl_w; 
-    wire        inst_rdcntvh_w; 
-    wire        id_rdcn_en;     
-    wire        id_rdcn_sel;    
-    assign id_rdcn_en  = inst_rdcntvh_w | inst_rdcntvl_w;
-    assign id_rdcn_sel = inst_rdcntvh_w;
-    /**new added**/
-
-
-
     /************************/
 
 
@@ -302,12 +281,6 @@ module ID (
     assign inst_csrwr  = (id_inst[31:24]==8'b00000100) & (rj==5'b00001);
     assign inst_csrxchg= (id_inst[31:24]==8'b00000100) & (rj[4:1]!=4'b0);
     assign inst_ertn   = id_inst[31:10]==22'b00000_11001_00100_00011_10;
-    
-    assign inst_break     = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'b10] & op_19_15_d[5'h14];
-    assign inst_rdcntid_w = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'b00] & op_19_15_d[5'h00] & rk == 5'h18 & rd == 5'h00;
-    assign inst_rdcntvl_w = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'b00] & op_19_15_d[5'h00] & rk == 5'h18 & rj == 5'h00;
-    assign inst_rdcntvh_w = op_31_26_d[6'h00] & op_25_22_d[4'h0] & op_21_20_d[2'b00] & op_19_15_d[5'h00] & rk == 5'h19 & rj == 5'h00;
-    
     /************************/
 
 
@@ -381,12 +354,9 @@ module ID (
     assign dst_is_r1        = inst_bl;
     assign id_gr_we         = ~inst_st_w & ~inst_beq & ~inst_bne & ~inst_b &
                               ~inst_st_b & ~inst_st_h & ~inst_blt & ~inst_bge & ~inst_bltu & ~inst_bgeu & //change 4
-                              ~inst_syscall & ~inst_ertn & 
-                              ~inst_break; //add
+                              ~inst_syscall & ~inst_ertn; //add
     assign id_mem_we        = inst_st_w | inst_st_b | inst_st_h;                                 //change 5
-    assign id_dest          = dst_is_r1 ? 5'd1 : 
-                              inst_rdcntid_w ? rj :
-                               rd;
+    assign id_dest          = dst_is_r1 ? 5'd1 : rd;
 
     assign rf_raddr1 = rj;
     assign rf_raddr2 = src_reg_is_rd ? rd :rk;
@@ -419,10 +389,15 @@ module ID (
     assign  {
         mem_en_bypass, mem_dest, mem_wdata
     } = mem_wr_bus;
-    assign addr1_valid = ~id_exc_type[`TYPE_INE] & 
-                    ~(inst_b | inst_bl | inst_csrrd | inst_csrwr | inst_syscall | inst_ertn | inst_break |
-                    inst_rdcntid_w | inst_rdcntvh_w | inst_rdcntvl_w);
-    
+    assign addr1_valid =    inst_add_w | inst_sub_w | inst_slt | inst_addi_w | inst_sltu | 
+                            inst_nor | inst_and | inst_or | inst_xor | inst_srli_w | 
+                            inst_slli_w | inst_srai_w | inst_slti | inst_sltui | inst_andi | inst_ori |inst_xori |
+                            inst_sll_w | inst_srl_w | inst_sra_w | inst_mul_w | inst_mulh_w | inst_mulh_wu |
+                            inst_div_w | inst_mod_w | inst_div_wu | inst_mod_wu |
+                            inst_ld_w | inst_ld_b | inst_ld_bu | inst_ld_h | inst_ld_hu |
+                            inst_st_w | inst_st_b | inst_st_h |
+                            inst_bne | inst_beq | inst_jirl | inst_blt | inst_bge | inst_bltu | inst_bgeu |
+                            inst_csrxchg;//add
     assign addr2_valid =    inst_add_w | inst_sub_w | inst_slt | inst_sltu | inst_and | 
                             inst_or | inst_nor | inst_xor |
                             inst_sll_w | inst_srl_w | inst_sra_w | inst_mul_w | inst_mulh_w | inst_mulh_wu |
@@ -442,9 +417,9 @@ module ID (
     assign {wb_csr_we, ertn_flush, wb_csr_waddr}    = wb_csr_blk_bus;
 
     assign csr_blk = id_csr_re & (//阻塞信号
-                        exe_csr_we&csr_raddr==exe_csr_waddr&(|exe_csr_waddr)|
-                        mem_csr_we&csr_raddr==mem_csr_waddr&(|mem_csr_waddr)|
-                        wb_csr_we&csr_raddr==wb_csr_waddr&(|wb_csr_waddr)|
+                        exe_csr_we&csr_raddr==exe_csr_waddr&|exe_csr_waddr|
+                        mem_csr_we&csr_raddr==mem_csr_waddr&|mem_csr_waddr|
+                        wb_csr_we&csr_raddr==wb_csr_waddr&|wb_csr_waddr|
                         exe_ertn&csr_raddr==`CSR_CRMD|
                         mem_ertn&csr_raddr==`CSR_CRMD|
                         ertn_flush&csr_raddr==`CSR_CRMD|
@@ -469,9 +444,9 @@ module ID (
     );
 //读写csr寄存器
     assign id_csr_we    = inst_csrwr | inst_csrxchg;
-    assign id_csr_re    = inst_csrrd | inst_csrwr | inst_csrxchg | inst_rdcntid_w;
+    assign id_csr_re    = inst_csrrd | inst_csrwr | inst_csrxchg;
     assign id_csr_waddr = id_inst[23:10];
-    assign id_csr_raddr = inst_rdcntid_w ? `CSR_TID : id_inst[23:10];
+    assign id_csr_raddr = id_inst[23:10];
     assign id_csr_wdata = id_rkd_value;
     assign id_csr_rdata = csr_rdata;
     assign id_csr_wmask = inst_csrxchg ? rj_value : pre_mask;
@@ -484,28 +459,8 @@ module ID (
                             {32{id_csr_waddr == `CSR_SAVE0 ||
                                 id_csr_waddr == `CSR_SAVE1 ||
                                 id_csr_waddr == `CSR_SAVE2 ||
-                                id_csr_waddr == `CSR_SAVE3 }} & `CSR_MASK_SAVE   |
-                            {32{id_csr_waddr == `CSR_ECFG  }} & `CSR_MASK_ECFG   |
-                            {32{id_csr_waddr == `CSR_BADV  }} & `CSR_MASK_BADV   |
-                            {32{id_csr_waddr == `CSR_TID   }} & `CSR_MASK_TID    |
-                            {32{id_csr_waddr == `CSR_TCFG  }} & `CSR_MASK_TCFG   |
-                            {32{id_csr_waddr == `CSR_TICLR }} & `CSR_MASK_TICLR;
-
-
+                                id_csr_waddr == `CSR_SAVE3 }} & `CSR_MASK_SAVE;
 //中断和异常标志
-    /**new added**/
-    assign  id_exc_type[`TYPE_SYS]=inst_syscall;
-    assign  id_exc_type[`TYPE_ADEF]=|id_pc[1:0];
-    assign  id_exc_type[`TYPE_ALE]=1'b0;
-    assign  id_exc_type[`TYPE_BRK]=inst_break;
-    assign  id_exc_type[`TYPE_INE]=~(id_exc_type[`TYPE_ADEF]) & ~(inst_add_w | inst_sub_w | inst_slt | inst_sltu | 
-    inst_nor | inst_and | inst_or | inst_xor | inst_slti | inst_sltui | inst_andi | inst_ori | inst_xori | inst_sll_w |
-    inst_srl_w | inst_sra_w | inst_slli_w | inst_srli_w | inst_srai_w | inst_addi_w | inst_pcaddu12i | inst_ld_w |
-    inst_st_w | inst_jirl | inst_b | inst_bl | inst_beq | inst_bne | inst_lu12i_w | inst_mul_w | inst_mulh_w|
-    inst_mulh_wu | inst_blt | inst_bge | inst_bltu | inst_bgeu | inst_ld_b | inst_ld_h | inst_ld_bu | inst_ld_hu |
-    inst_st_b | inst_st_h | inst_syscall | inst_csrrd | inst_csrwr | inst_csrxchg | inst_ertn | inst_break |
-    inst_rdcntid_w | inst_rdcntvl_w | inst_rdcntvh_w | inst_mod_w | inst_mod_wu | inst_div_w | inst_div_wu);
-    assign  id_exc_type[`TYPE_INT]=csr_has_int;
-    /**new added**/
+    assign  id_exc_type = {5'b0, inst_syscall};
 
 endmodule

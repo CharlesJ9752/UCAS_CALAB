@@ -60,7 +60,6 @@ module mycpu_top(
     wire                                    mem_exc;
     wire                                    mem_ertn;
     wire                                    exe_ertn;
-    wire    [31:0]                          wb_badvaddr;
 
     //模块调用
     IF my_IF (
@@ -98,8 +97,7 @@ module mycpu_top(
         .csr_raddr          (csr_raddr),
         .exe_csr_blk_bus    (exe_csr_blk_bus),
         .mem_csr_blk_bus    (mem_csr_blk_bus),
-        .wb_csr_blk_bus     (wb_csr_blk_bus),
-        .csr_has_int        (csr_has_int)
+        .wb_csr_blk_bus     (wb_csr_blk_bus)
     );
     EXE my_EXE (
         .clk                (clk),
@@ -158,8 +156,7 @@ module mycpu_top(
         .wb_esubcode        (wb_esubcode),
         .wb_pc              (wb_pc),
         .ertn_flush         (ertn_flush),
-        .wb_csr_blk_bus     (wb_csr_blk_bus),
-        .wb_badvaddr        (wb_badvaddr)    
+        .wb_csr_blk_bus     (wb_csr_blk_bus)    
     );
     csr my_csr(
         .clk                (clk),
@@ -177,7 +174,6 @@ module mycpu_top(
         .ertn_flush         (ertn_flush),
         .has_int            (csr_has_int),
         .exc_entaddr        (exc_entaddr),
-        .exc_retaddr        (exc_retaddr),
-        .wb_badvaddr        (wb_badvaddr)
+        .exc_retaddr        (exc_retaddr)
     );
 endmodule

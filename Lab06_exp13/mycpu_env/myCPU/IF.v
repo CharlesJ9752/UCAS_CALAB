@@ -35,7 +35,7 @@ module IF (
 
 //控制信号的赋值
     assign  if_ready_go = 1'b1;
-    assign  if_allowin = ~if_valid | if_ready_go & id_allowin;//还没�?始，或当前指令可以去下一�?
+    assign  if_allowin = ~resetn | if_ready_go & id_allowin;//还没�?始，或当前指令可以去下一�?
     always @(posedge clk ) begin
         if(~resetn)begin
             if_valid <= 1'b0;

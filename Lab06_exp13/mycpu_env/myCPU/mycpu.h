@@ -2,7 +2,7 @@
     //buses
     `define IF_ID_BUS_WDTH 64
     `define ID_IF_BUS_WDTH 33
-    `define ID_EXE_BUS_WDTH 308   //lzc: add 2 bits for [ds_rdcn_en] and [ds_rdcn_sel]
+    `define ID_EXE_BUS_WDTH 306
     `define WB_ID_BUS_WDTH 38
     `define EXE_MEM_BUS_WDTH 189
     `define MEM_WB_BUS_WDTH 188
@@ -64,17 +64,5 @@
     `define EXC_ECODE_INE   6'h0D
     //esubcodes
     `define EXC_ESUBCODE_ADEF   9'h000
-    `define EXC_ESUBCODE_ADEM   9'h001
-    `define CSR_ECFG_LIE    12:0
-    `define CSR_BADV_VAddr  31:0
-    `define CSR_TID_TID     31:0
-    `define CSR_TCFG_EN      0
-    `define CSR_TCFG_PERIOD  1
-    `define CSR_TCFG_INITVAL 31:2
-    `define CSR_TICLR_CLR   0
-    `define CSR_MASK_ECFG   32'h0000_1fff
-    `define CSR_MASK_TID    32'hffff_ffff
-    `define CSR_MASK_TCFG   32'hffff_ffff
-    `define CSR_MASK_TICLR  32'h0000_0001
-    `define CSR_MASK_BADV   32'hffff_ffff
+    `define EXC_ESUBCODE_ADEM   9'h000
 `endif
