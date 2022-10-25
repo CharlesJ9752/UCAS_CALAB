@@ -34,7 +34,7 @@ module MEM (
     wire                                    mem_gr_we;
     wire                                    res_from_mem;
     wire    [  4:0]                         mem_dest;
-    wire    [ 31:0]                         alu_result;
+    wire    [ 31:0]                         exe_to_mem_result;
     wire    [ 31:0]                         mem_final_result;
     wire                                    mem_en_bypass;
     wire    [ 31:0]                         mem_ld_result;
@@ -51,7 +51,7 @@ module MEM (
 //控制信号的赋值
     assign  mem_ready_go = 1'b1;
     assign  mem_wb_valid = mem_ready_go & mem_valid;
-    assign  mem_allowin = mem_wb_valid & wb_allowin | ~mem_valid;
+    assign  mem_allowin = mem_ready_go & wb_allowin | ~mem_valid;
     always @(posedge clk ) begin
         if (~resetn) begin
             mem_valid <= 1'b0;
@@ -70,7 +70,7 @@ module MEM (
     assign {mem_csr_we,mem_csr_waddr,mem_csr_wmask,
          mem_csr_wdata,mem_inst_ertn,exe_exc_type,
         mem_gr_we, res_from_mem, mem_dest,
-        mem_pc, mem_inst, alu_result
+        mem_pc, mem_inst, exe_to_mem_result
     } = exe_mem_bus_vld;
     assign  mem_wb_bus = {mem_csr_we,mem_csr_waddr,
         mem_csr_wmask,mem_csr_wdata,mem_inst_ertn,mem_exc_type,
@@ -89,7 +89,7 @@ module MEM (
     wire    [31:0]  half_xtnd;
     wire    [31:0]  byte_xtnd;
     
-    assign  vaddr = alu_result[1:0];
+    assign  vaddr = exe_to_mem_result[1:0];
     assign  word  = data_sram_rdata;
     assign  half  = vaddr[1] ? word[31:16] : word[15:0];
     assign  byte  = vaddr[1] & vaddr[0] ? word[31:24] :
@@ -103,11 +103,9 @@ module MEM (
                             {32{inst_ld_h | inst_ld_hu}} & half_xtnd |
                             {32{inst_ld_w             }} & word      ;
 
-    assign  mem_final_result = res_from_mem ? mem_ld_result : alu_result;
-    assign  mem_wb_bus = {mem_csr_we,mem_csr_waddr,
-        mem_csr_wmask,mem_csr_wdata,mem_inst_ertn,mem_exc_type,
-        mem_gr_we, mem_pc, mem_inst, mem_final_result, mem_dest
-    };
+    assign  mem_final_result =  mem_exc_type[`TYPE_ALE] ?   exe_to_mem_result      ://new added(unsure)
+                                res_from_mem            ?   mem_ld_result   : 
+                                                            exe_to_mem_result      ;
     assign mem_exc = (|mem_exc_type) & mem_valid;
 //阻塞和前递
     assign  mem_en_bypass = mem_valid & mem_gr_we;

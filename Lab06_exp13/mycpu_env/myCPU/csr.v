@@ -16,7 +16,11 @@ module csr(
     input  [ 8:0] wb_esubcode,
     input  [31:0] wb_pc,
     input         ertn_flush,
-    output        has_int
+    output        has_int,
+
+
+    //exp13 jyh
+    input  [31:0] wb_badvaddr
 );
 
     //CRMD
@@ -75,8 +79,10 @@ module csr(
             csr_prmd_pie <= csr_crmd_ie;
         end
         else if (csr_we && csr_waddr==`CSR_PRMD) begin
-            csr_prmd_pplv <= csr_wmask[`CSR_PRMD_PPLV]&csr_wdata[`CSR_PRMD_PPLV] | ~csr_wmask[`CSR_PRMD_PPLV]&csr_prmd_pplv;
-            csr_prmd_pie <= csr_wmask[`CSR_PRMD_PIE]&csr_wdata[`CSR_PRMD_PIE] | ~csr_wmask[`CSR_PRMD_PIE]&csr_prmd_pie;
+            csr_prmd_pplv <= csr_wmask[`CSR_PRMD_PPLV]&csr_wdata[`CSR_PRMD_PPLV] 
+            | ~csr_wmask[`CSR_PRMD_PPLV]&csr_prmd_pplv;
+            csr_prmd_pie <= csr_wmask[`CSR_PRMD_PIE]&csr_wdata[`CSR_PRMD_PIE] 
+            | ~csr_wmask[`CSR_PRMD_PIE]&csr_prmd_pie;
         end
     end
     assign  csr_prmd_rdata = {29'b0, csr_prmd_pie, csr_prmd_pplv};
@@ -89,7 +95,8 @@ module csr(
         if (~resetn)
             csr_ecfg_lie <= 13'b0;
         else if (csr_we && csr_waddr==`CSR_ECFG)
-            csr_ecfg_lie <= csr_wmask[`CSR_ECFG_LIE]&csr_wdata[`CSR_ECFG_LIE] | ~csr_wmask[`CSR_ECFG_LIE]&csr_ecfg_lie;
+            csr_ecfg_lie <= csr_wmask[`CSR_ECFG_LIE]&csr_wdata[`CSR_ECFG_LIE] 
+            | ~csr_wmask[`CSR_ECFG_LIE]&csr_ecfg_lie;
     end
     assign  csr_ecfg_rdata = {19'b0, csr_ecfg_lie};
 
@@ -102,10 +109,18 @@ module csr(
         if (~resetn)
             csr_estat_is[1:0] <= 2'b0;
         else if (csr_we && csr_waddr==`CSR_ESTAT)
-            csr_estat_is[1:0] <= csr_wmask[`CSR_ESTAT_IS10]&csr_wdata[`CSR_ESTAT_IS10] | ~csr_wmask[`CSR_ESTAT_IS10]&csr_estat_is[1:0];
+            csr_estat_is[1:0] <= csr_wmask[`CSR_ESTAT_IS10]&csr_wdata[`CSR_ESTAT_IS10] 
+            | ~csr_wmask[`CSR_ESTAT_IS10]&csr_estat_is[1:0];
         csr_estat_is[9:2] <= 8'b0;//hwint=0
         csr_estat_is[10] <= 1'b0;//eternal 0
-        csr_estat_is[11] <= 1'b0;//exp13要改
+        if (csr_tcfg_en & timer_cnt == 32'b0) begin
+            csr_estat_is[11] <= 1'b1;
+        end
+        else if (csr_we && csr_waddr == `CSR_TICLR    &&
+                               csr_wmask[`CSR_TICLR_CLR] &&
+                               csr_wdata[`CSR_TICLR_CLR]) begin
+            csr_estat_is[11] <= 1'b0;//软件通过向CLR写1来将estatis第十一位清零
+        end
         csr_estat_is[12] <= 1'b0;//ipiint=0
     end
     always @(posedge clk) begin
@@ -169,7 +184,77 @@ module csr(
     };
     assign exc_entaddr  = csr_eentry_rdata;
     assign exc_retaddr  = csr_era_rdata;
-    assign has_int     = (|(csr_estat_is & csr_ecfg_lie)) & csr_crmd_ie;
+    //TCFG
+    reg         csr_tcfg_en;
+    reg         csr_tcfg_periodic;
+    reg  [29:0] csr_tcfg_initdata;
+    wire [31:0] csr_tcfg_rdata;
+    always @ (posedge clk) begin
+        if (~resetn) begin
+            csr_tcfg_en <= 1'b0;
+        end else if (csr_we && csr_waddr == `CSR_TCFG) begin
+            csr_tcfg_en      <= csr_wmask[`CSR_TCFG_EN] & csr_wdata[`CSR_TCFG_EN] |
+                               ~csr_wmask[`CSR_TCFG_EN] & csr_tcfg_en;
+            csr_tcfg_periodic  <= csr_wmask[`CSR_TCFG_PERIOD] & csr_wdata[`CSR_TCFG_PERIOD] |
+                               ~csr_wmask[`CSR_TCFG_PERIOD] & csr_tcfg_periodic;
+            csr_tcfg_initdata <= csr_wmask[`CSR_TCFG_INITVAL] & csr_wdata[`CSR_TCFG_INITVAL] |
+                               ~csr_wmask[`CSR_TCFG_INITVAL] & csr_tcfg_initdata;
+        end
+    end
+    assign csr_tcfg_rdata = {csr_tcfg_initdata, csr_tcfg_periodic, csr_tcfg_en};
+
+    //TVAL
+    wire [31:0] tcfg_next_data;
+    wire [31:0] csr_tval_rdata;
+    reg  [31:0] timer_cnt;
+    assign      tcfg_next_data = csr_wmask & csr_wdata |~csr_wmask & csr_tcfg_rdata;
+    always @ (posedge clk) begin
+        if (~resetn) begin
+            timer_cnt <= 32'hffffffff;
+        end 
+        else if (csr_we && csr_waddr == `CSR_TCFG && tcfg_next_data[`CSR_TCFG_EN]) begin
+            timer_cnt <= {tcfg_next_data[`CSR_TCFG_INITVAL], 2'b0};
+        end 
+        else if (csr_tcfg_en && timer_cnt != 32'hffffffff) begin
+            if (timer_cnt == 32'b0 && csr_tcfg_periodic) begin
+                timer_cnt <= {csr_tcfg_initdata, 2'b0};
+            end 
+            else begin
+                timer_cnt <= timer_cnt - 1'b1;
+            end
+        end
+    end
+    assign csr_tval_rdata = timer_cnt;
+    
+    //TICLR
+    wire    [31:0] csr_ticlr_rdata;
+    assign  csr_ticlr_rdata = 32'b0;
+
+    //TID
+    reg     [31:0] csr_tid_tid;
+    wire    [31:0] csr_tid_rdata;
+    always @ (posedge clk) begin
+        if (~resetn) begin
+            csr_tid_tid <= 32'b0;
+        end else if (csr_we && csr_waddr == `CSR_TID) begin
+            csr_tid_tid <= csr_wmask[`CSR_TID_TID] & csr_wdata[`CSR_TID_TID]
+                        | ~csr_wmask[`CSR_TID_TID] & csr_tid_tid;
+        end
+    end
+    assign  csr_tid_rdata = csr_tid_tid;
+    
+    //BADV
+    reg  [31:0] csr_badv_vaddr;
+    wire [31:0] csr_badv_rdata;
+    assign wb_exc_addr_err = wb_ecode==`EXC_ECODE_ADE || wb_ecode==`EXC_ECODE_ALE;
+    always @(posedge clk) begin
+        if (wb_exc && wb_exc_addr_err)
+            csr_badv_vaddr <= (wb_ecode==`EXC_ECODE_ADE && 
+                               wb_esubcode==`EXC_ESUBCODE_ADEF) ? wb_pc : wb_badvaddr;
+    end
+    assign csr_badv_rdata = csr_badv_vaddr;
+    assign has_int = ((csr_estat_is[11:0] & csr_ecfg_lie[11:0]) != 12'b0)
+                        && (csr_crmd_ie == 1'b1);
     assign csr_rdata =  {32{csr_raddr == `CSR_CRMD  }} & csr_crmd_rdata     |
                         {32{csr_raddr == `CSR_PRMD  }} & csr_prmd_rdata     |
                         {32{csr_raddr == `CSR_ESTAT }} & csr_estat_rdata    |
@@ -178,6 +263,12 @@ module csr(
                         {32{csr_raddr == `CSR_SAVE0 }} & csr_save0_rdata    |
                         {32{csr_raddr == `CSR_SAVE1 }} & csr_save1_rdata    |
                         {32{csr_raddr == `CSR_SAVE2 }} & csr_save2_rdata    |
-                        {32{csr_raddr == `CSR_SAVE3 }} & csr_save3_rdata    ;
+                        {32{csr_raddr == `CSR_SAVE3 }} & csr_save3_rdata    |
+                        {32{csr_raddr == `CSR_ECFG  }} & csr_ecfg_rdata    |
+                        {32{csr_raddr == `CSR_BADV  }} & csr_badv_rdata    |
+                        {32{csr_raddr == `CSR_TID   }} & csr_tid_rdata     |
+                        {32{csr_raddr == `CSR_TCFG  }} & csr_tcfg_rdata    |
+                        {32{csr_raddr == `CSR_TVAL  }} & csr_tval_rdata    |
+                        {32{csr_raddr == `CSR_TICLR }} & csr_ticlr_rdata;
 
 endmodule

@@ -24,7 +24,10 @@ module WB (
     output  [  8:0]                         wb_esubcode,
     output  [ 31:0]                         wb_pc,
     output                                  ertn_flush,
-    output  [`WB_CSR_BLK_BUS_WDTH - 1:0]    wb_csr_blk_bus
+    output  [`WB_CSR_BLK_BUS_WDTH - 1:0]    wb_csr_blk_bus,
+
+    //NEW ADDED
+    output  [31:0]                          wb_badvaddr
 );
 //信号定义
     //控制信号
@@ -68,7 +71,7 @@ module WB (
         wb_gr_we, wb_pc, wb_inst, wb_final_result, wb_dest
     } = mem_wb_bus_vld;
 //写数据
-    assign  rf_we = wb_valid & wb_gr_we;
+    assign  rf_we = wb_valid & wb_gr_we & ~wb_exc; 
     assign  rf_waddr = wb_dest; 
     assign  rf_wdata = wb_final_result;
     assign  wb_id_bus = {
@@ -81,9 +84,15 @@ module WB (
     wire [31:0]         wb_csr_wmask;
     wire                wb_inst_ertn;
     assign wb_exc = wb_valid & (|wb_exc_type);
-    assign wb_ecode    = {6{wb_exc_type[`TYPE_SYS ]}} & `EXC_ECODE_SYS;
-    assign wb_esubcode = 9'b0;
-    assign  ertn_flush = wb_inst_ertn & wb_valid;
+    assign wb_ecode    =    {6{wb_exc_type[`TYPE_ADEF]}} & `EXC_ECODE_ADE|
+                            {6{wb_exc_type[`TYPE_BRK ]}} & `EXC_ECODE_BRK|
+                            {6{wb_exc_type[`TYPE_INE ]}} & `EXC_ECODE_INE|
+                            {6{wb_exc_type[`TYPE_INT ]}} & `EXC_ECODE_INT|
+                            {6{wb_exc_type[`TYPE_ALE ]}} & `EXC_ECODE_ALE|
+                            {6{wb_exc_type[`TYPE_SYS ]}} & `EXC_ECODE_SYS;//NEW ADDED!
+
+    assign wb_esubcode = {9{wb_exc_type[`TYPE_ADEF]}} & `EXC_ESUBCODE_ADEF;//NEW ADDED!
+    assign ertn_flush = wb_inst_ertn & wb_valid;
     assign wb_csr_blk_bus = {wb_csr_we & wb_valid, ertn_flush, wb_csr_waddr};
     assign csr_wmask = wb_csr_wmask;
     assign csr_we    = wb_csr_we & wb_valid & ~wb_exc;
@@ -96,4 +105,10 @@ module WB (
     assign  debug_wb_rf_wdata = rf_wdata;
 //中断和异常标志
     assign  wb_exc_type = mem_exc_type;
+
+/**new added**/
+//badvaddr
+assign wb_badvaddr = wb_final_result;
+/**new added**/
+
 endmodule

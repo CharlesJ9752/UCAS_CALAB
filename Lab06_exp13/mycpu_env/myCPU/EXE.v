@@ -58,12 +58,20 @@ module EXE (
     //中断和异常标志
     wire [`NUM_TYPES - 1:0]              id_exc_type;
     wire [`NUM_TYPES - 1:0]              exe_exc_type;
-//控制信号的赋值
+
+    /**new added**/
+    wire exe_rdcn;
+    wire exe_inst_rdcntvh_w;
+
+    /**new added**/
+
+
+    //控制信号的赋值
     assign exe_ready_go    = (alu_op[15] | alu_op[17]) & div_out_tvalid | 
                              (alu_op[16] | alu_op[18]) & divu_out_tvalid |
                              (~(alu_op[15]|alu_op[16]|alu_op[17]|alu_op[18]));
     assign  exe_mem_valid = exe_ready_go & exe_valid;
-    assign  exe_allowin = exe_mem_valid & mem_allowin | ~exe_valid;
+    assign  exe_allowin = exe_ready_go & mem_allowin | ~exe_valid;
     always @(posedge clk ) begin
         if (~resetn) begin
             exe_valid <= 1'b0;
@@ -80,7 +88,9 @@ module EXE (
             id_exe_bus_vld <= id_exe_bus; 
         end
     end
-    assign { exe_csr_we, exe_csr_re, exe_csr_waddr, exe_csr_wmask, exe_csr_wdata, exe_csr_rdata,   //112 bits
+    assign { 
+        exe_rdcn, exe_inst_rdcntvh_w,  //new added
+        exe_csr_we, exe_csr_re, exe_csr_waddr, exe_csr_wmask, exe_csr_wdata, exe_csr_rdata,   //112 bits
         exe_inst_ertn, id_exc_type,                                                         //7 bits
         exe_gr_we, exe_mem_we, exe_res_from_mem, 
         alu_op, alu_src1, alu_src2,
@@ -215,7 +225,19 @@ module EXE (
     );
     assign {divu_res_hi, divu_res_lo} = divu_res;
 //中断和异常标志
-    assign exe_exc_type = id_exc_type;
+    /**new added**/
+    assign inst_ld_b = exe_inst[31:22] == 10'b0010100000;
+    assign inst_ld_h = exe_inst[31:22] == 10'b0010100001;
+    assign inst_ld_bu = exe_inst[31:22] == 10'b0010101000;
+    assign inst_ld_hu = exe_inst[31:22] == 10'b0010101001;
+    assign inst_ld_w = exe_inst[31:22] == 10'b0010100010;
+    assign  exe_exc_type[`TYPE_SYS]=id_exc_type[`TYPE_SYS];
+    assign  exe_exc_type[`TYPE_ADEF]=id_exc_type[`TYPE_ADEF];
+    assign  exe_exc_type[`TYPE_ALE]=exe_valid & (exe_res_from_mem | exe_mem_we) & ((inst_ld_h | inst_ld_hu | inst_st_h) & alu_result[0] | (inst_ld_w | inst_st_w) & (|alu_result[1:0]));
+    assign  exe_exc_type[`TYPE_BRK]=id_exc_type[`TYPE_BRK];
+    assign  exe_exc_type[`TYPE_INE]=id_exc_type[`TYPE_INE];
+    assign  exe_exc_type[`TYPE_INT]=id_exc_type[`TYPE_INT];
+    /**new added**/
     assign exe_exc = |exe_exc_type & exe_valid; 
     assign exe_ertn = exe_inst_ertn & exe_valid;
 //阻塞和前递
@@ -260,8 +282,20 @@ module EXE (
         exe_gr_we, exe_res_from_mem, exe_dest,
         exe_pc, exe_inst, exe_result
     };
+/**new added**/
+//counter
+reg [63:0] countor;
+always @ (posedge clk) begin
+    if (~resetn)
+            countor <= 64'b0;
+    else
+        countor <= countor + 64'b1;
+end
+/**new added**/
 //exe阶段最终结果
-    assign  exe_result =    exe_csr_re ? exe_csr_rdata:
+    assign  exe_result =    {exe_rdcn &  exe_inst_rdcntvh_w} ? countor[63:32] :/**new added**/
+                            {exe_rdcn & ~exe_inst_rdcntvh_w} ? countor[31: 0] :/**new added**/
+                            exe_csr_re ? exe_csr_rdata:
                             alu_op[15] ? div_res_hi :
                             alu_op[17] ? div_res_lo :
                             alu_op[16] ? divu_res_hi :
