@@ -17,6 +17,10 @@ module wb_stage(
     output [ 4:0] debug_wb_rf_wnum,
     output [31:0] debug_wb_rf_wdata,
 
+    // div final res
+    input  [63:0] ws_div_res_bus,
+    input         ws_div_finish,
+
     output        csr_we,
     output [13:0] csr_wnum,
     output [31:0] csr_wmask,
@@ -33,6 +37,10 @@ module wb_stage(
     output [`WS_CSR_BLK_BUS_WD-1:0] ws_csr_blk_bus
 );
 
+
+reg        wb_exc_r;
+reg        wb_ertn_r;
+
 reg         ws_valid;
 wire        ws_ready_go;
 
@@ -47,16 +55,24 @@ wire        ws_inst_ertn;
 wire        ws_gr_we;
 wire [ 4:0] ws_dest;
 wire [31:0] ws_final_result;
+wire [31:0] ws_res_from_ms;
 wire [31:0] ws_pc;
+
+wire        ws_res_from_div;
+wire        div_res_sel;
+wire [31:0] div_result;
+
 assign {ws_csr_we      ,
         ws_csr_wnum    ,
         ws_csr_wmask   ,
         ws_csr_wdata   ,
         ws_inst_ertn   ,
         ws_exc_flgs    ,
+        ws_res_from_div,
+        div_res_sel    ,
         ws_gr_we       ,  //69:69
         ws_dest        ,  //68:64
-        ws_final_result,  //63:32
+        ws_res_from_ms,  //63:32
         ws_pc             //31:0
        } = ms_to_ws_bus_r;
 
@@ -82,7 +98,26 @@ always @(posedge clk) begin
     end
 end
 
-assign rf_we    = ws_gr_we & ws_valid & ~wb_exc;
+always @(posedge clk) begin
+    if (reset) begin
+        wb_exc_r <= 1'b0;
+        wb_ertn_r <= 1'b0;
+    end else if (wb_exc) begin
+        wb_exc_r <= 1'b1;
+    end else if (ertn_flush) begin
+        wb_ertn_r <= 1'b1;
+    end else if (ms_to_ws_valid & ws_allowin)begin
+        wb_exc_r <= 1'b0;
+        wb_ertn_r <= 1'b0;
+    end
+end
+
+assign div_result = div_res_sel ? ws_div_res_bus[63:32] :
+                                  ws_div_res_bus[31: 0];
+
+assign ws_final_result = ws_res_from_div ? div_result : ws_res_from_ms;
+
+assign rf_we    = ws_gr_we & ws_valid & ~(wb_exc | ertn_flush | wb_ertn_r | wb_exc_r);
 assign rf_waddr = ws_dest;
 assign rf_wdata = ws_final_result;
 

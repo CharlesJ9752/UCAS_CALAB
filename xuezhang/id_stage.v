@@ -34,8 +34,12 @@ module id_stage(
     input [`WS_CSR_BLK_BUS_WD-1:0] ws_csr_blk_bus
 );
 
-reg             ds_valid   ;
+
+reg        wb_exc_r;
+reg        wb_ertn_r;
+
 wire            ds_ready_go;
+reg             ds_valid;
 
 reg  [`FS_TO_DS_BUS_WD -1:0]     fs_to_ds_bus_r;
 
@@ -55,6 +59,8 @@ assign {rf_we   ,  //37:37
        } = ws_to_rf_bus;
 
 wire            br_taken;
+wire            br_taken_cancel;
+wire            br_stall;
 wire [31:0]     br_target;
 
 // sigs for exc || int
@@ -198,12 +204,14 @@ wire            es_blk_we;
 wire [ 4:0]     es_waddr;
 wire [31:0]     es_wdata;
 wire            ms_fwd_we;
+wire            ms_blk_we;
 wire [ 4:0]     ms_waddr;
 wire [31:0]     ms_wdata;
 
 wire            es_blk;
 wire            es_reg1_hazard;
 wire            es_reg2_hazard;
+wire            ms_blk;
 wire            ms_reg1_hazard;
 wire            ms_reg2_hazard;
 wire            ws_reg1_hazard;
@@ -230,7 +238,7 @@ wire ws_csr_blk;
 
 // RAW for common usr insts
 assign {es_fwd_we, es_blk_we, es_waddr, es_wdata} = es_fwd_blk_bus;
-assign {ms_fwd_we, ms_waddr, ms_wdata} = ms_fwd_blk_bus;
+assign {ms_fwd_we, ms_blk_we, ms_waddr, ms_wdata} = ms_fwd_blk_bus;
 
 assign src_reg1 = ~ds_exc_flgs[`EXC_FLG_INE] & ~(inst_b | inst_bl | inst_csrrd | inst_csrwr | inst_syscall | inst_ertn | inst_break |
                                                  inst_rdcntid_w | inst_rdcntvh_w | inst_rdcntvl_w);
@@ -246,15 +254,18 @@ assign es_blk = es_blk_we && es_waddr != 0 && (
                 src_reg1 && es_waddr == rf_raddr1 ||
                 src_reg2 && es_waddr == rf_raddr2
                 );
+
+assign ms_blk = ms_blk_we && ms_waddr != 0 && (
+                src_reg1 && ms_waddr == rf_raddr1 ||
+                src_reg2 && ms_waddr == rf_raddr2
+                );
+
 assign es_reg1_hazard = es_fwd_we && es_waddr != 0 && src_reg1 && es_waddr == rf_raddr1;
 assign es_reg2_hazard = es_fwd_we && es_waddr != 0 && src_reg2 && es_waddr == rf_raddr2;
 assign ms_reg1_hazard = ms_fwd_we && ms_waddr != 0 && src_reg1 && ms_waddr == rf_raddr1;
 assign ms_reg2_hazard = ms_fwd_we && ms_waddr != 0 && src_reg2 && ms_waddr == rf_raddr2;
 assign ws_reg1_hazard = rf_we     && rf_waddr != 0 && src_reg1 && rf_waddr == rf_raddr1;
 assign ws_reg2_hazard = rf_we     && rf_waddr != 0 && src_reg2 && rf_waddr == rf_raddr2;
-
-
-assign br_bus       = {br_taken,br_target};
 
 assign ds_to_es_bus = {
                        ds_rdcn_en  ,  //285:285
@@ -283,10 +294,9 @@ assign ds_to_es_bus = {
                       };
 
 // with blk
-assign ds_ready_go    = ~(es_blk | csr_blk) | (wb_exc | wb_ertn);
-
+assign ds_ready_go    = ~(es_blk | ms_blk | csr_blk);
 assign ds_allowin     = !ds_valid || ds_ready_go && es_allowin;
-assign ds_to_es_valid = ds_valid & ds_ready_go & ~(wb_exc | wb_ertn);
+assign ds_to_es_valid = ds_valid & ds_ready_go;
 
 always @(posedge clk) begin
     if (reset) begin
@@ -299,8 +309,25 @@ always @(posedge clk) begin
 end
 
 always @(posedge clk) begin 
+    if(reset) begin
+        fs_to_ds_bus_r <= `FS_TO_DS_BUS_WD'b0;
+    end
     if (fs_to_ds_valid && ds_allowin) begin
         fs_to_ds_bus_r <= fs_to_ds_bus;
+    end
+end
+
+always @(posedge clk) begin
+    if (reset) begin
+        wb_exc_r <= 1'b0;
+        wb_ertn_r <= 1'b0;
+    end else if (wb_exc) begin
+        wb_exc_r <= 1'b1;
+    end else if (wb_ertn) begin
+        wb_ertn_r <= 1'b1;
+    end else if (ds_valid & ds_ready_go & es_allowin)begin
+        wb_exc_r <= 1'b0;
+        wb_ertn_r <= 1'b0;
     end
 end
 
@@ -510,7 +537,10 @@ assign br_taken = (   (inst_beq  &&  rj_eq_rd)
                   ) && ds_valid && ds_ready_go; 
 assign br_target = (inst_beq || inst_bne || inst_blt || inst_bge || inst_bltu || inst_bgeu || inst_bl || inst_b) ? (ds_pc + br_offs) :
                                                    /*inst_jirl*/ (rj_value + jirl_offs);
-
+// assign br_stall = es_blk | ms_blk | csr_blk;
+assign br_taken_cancel = br_taken && ds_ready_go;
+assign br_stall = (inst_beq || inst_bne || inst_blt || inst_bge || inst_bltu || inst_bgeu || inst_bl || inst_jirl || inst_b) & !ds_ready_go;
+assign br_bus       = {br_taken,br_taken_cancel,br_stall,br_target};
 /*
  *  exc && int
  */

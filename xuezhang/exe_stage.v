@@ -13,22 +13,32 @@ module exe_stage(
     output                         es_to_ms_valid,
     output [`ES_TO_MS_BUS_WD -1:0] es_to_ms_bus  ,
     // data sram interface
-    output        data_sram_en   ,
-    output [ 3:0] data_sram_wen  ,
-    output [31:0] data_sram_addr ,
-    output [31:0] data_sram_wdata,
+    output                         data_sram_req  ,
+    output                         data_sram_wr   ,
+    output [ 1:0]                  data_sram_size ,
+    output [31:0]                  data_sram_addr ,
+    output [ 3:0]                  data_sram_wstrb,
+    output [31:0]                  data_sram_wdata,
+    input                          data_sram_addr_ok,
 
     // blk bus to id
     output [`ES_FWD_BLK_BUS_WD-1:0] es_fwd_blk_bus,
     // mul pipe res for MEM
     output [64:0] es_mul_res_bus,
+    output [63:0] es_div_res_bus,
+    output        div_ms_go,
+    output        div_finish,
 
     input wb_exc,
     input wb_ertn,
-    input ms_to_es_st_cancel,
+    input ms_to_es_ls_cancel,
 
     output [`ES_CSR_BLK_BUS_WD-1:0] es_csr_blk_bus
 );
+
+
+reg        wb_exc_r;
+reg        wb_ertn_r;
 
 reg         es_valid      ;
 wire        es_ready_go   ;
@@ -48,14 +58,15 @@ wire [31:0] es_rkd_value  ;
 wire [31:0] es_pc         ;
 
 wire [31:0] store_data    ;
-wire        store_cancel  ;
+wire        ls_cancel  ;
 
 wire [ 4:0] es_load_op;
 wire [ 2:0] es_store_op;
 wire        es_res_from_mul;
+wire        es_res_from_div;
 wire        is_div;
-wire        div_finish;
-wire        waiting_ready;
+wire        div_res_sel;
+wire        div_es_go;
 
 wire [`EXC_NUM - 1:0] es_exc_flgs;
 wire        es_csr_we;
@@ -72,6 +83,10 @@ wire ls_word;
 
 wire es_rdcn_en;
 wire es_rdcn_sel;
+
+reg es_addr_ok_r;
+
+assign es_res_from_div = is_div;
 
 assign {es_rdcn_en     ,
         es_rdcn_sel    ,
@@ -111,17 +126,22 @@ assign es_to_ms_bus = {es_rdcn_en     ,
                        es_csr_wdata   ,
                        es_inst_ertn   ,
                        es_exc_flgs    ,
+                       ls_cancel      ,
+                       es_res_from_div,
+                       div_res_sel    ,
                        es_res_from_mul,  //75:75
                        es_load_op     ,  //74:70
+                       es_mem_we      ,  //133:133
                        es_gr_we       ,  //69:69
                        es_dest        ,  //68:64
                        es_result      ,  //63:32
                        es_pc             //31:0
                       };
 
-assign es_ready_go    = ~(is_div & ~div_finish) | (wb_exc | wb_ertn);
+assign es_ready_go    = ((|es_load_op) || es_mem_we) ? (((data_sram_req & data_sram_addr_ok) | ls_cancel) || es_addr_ok_r) : (~(is_div & ~div_es_go));
 assign es_allowin     = !es_valid || es_ready_go && ms_allowin;
-assign es_to_ms_valid =  es_valid & es_ready_go & ~(wb_exc | wb_ertn);
+assign es_to_ms_valid =  es_valid & es_ready_go & (~(wb_exc | wb_ertn | wb_exc_r | wb_ertn_r));
+
 always @(posedge clk) begin
     if (reset) begin
         es_valid <= 1'b0;
@@ -132,6 +152,28 @@ always @(posedge clk) begin
     if (ds_to_es_valid && es_allowin) begin
         ds_to_es_bus_r <= ds_to_es_bus;
     end
+
+    if(reset) begin
+        es_addr_ok_r <= 1'b0;
+    end else if(data_sram_addr_ok && data_sram_req && !ms_allowin) begin
+        es_addr_ok_r <= 1'b1;
+    end else if(ms_allowin) begin
+        es_addr_ok_r <= 1'b0;
+    end
+end
+
+always @(posedge clk) begin
+    if (reset) begin
+        wb_exc_r <= 1'b0;
+        wb_ertn_r <= 1'b0;
+    end else if (wb_exc) begin
+        wb_exc_r <= 1'b1;
+    end else if (wb_ertn) begin
+        wb_ertn_r <= 1'b1;
+    end else if (ds_to_es_valid & es_allowin)begin
+        wb_exc_r <= 1'b0;
+        wb_ertn_r <= 1'b0;
+    end 
 end
 
 assign es_alu_src1 = es_src1_is_pc  ? es_pc[31:0] : 
@@ -141,38 +183,45 @@ assign es_alu_src2 = es_src2_is_imm ? es_imm :
                                       es_rkd_value;
 
 alu u_alu(
-    .clk        (clk          ),
-    .rst        (reset        ),
-    .alu_op     (es_alu_op    ),
-    .alu_src1   (es_alu_src1  ),
-    .alu_src2   (es_alu_src2  ),
-    .alu_result (es_alu_result),
-    .es_valid   (es_valid     ),
-    .is_div     (is_div       ),
-    .div_finish (div_finish   ),
-    .mul_res_bus(es_mul_res_bus)
+    .clk        (clk            ),
+    .rst        (reset          ),
+    .alu_op     (es_alu_op      ),
+    .alu_src1   (es_alu_src1    ),
+    .alu_src2   (es_alu_src2    ),
+    .alu_result (es_alu_result  ),
+    .es_valid   (es_valid       ),
+    .is_div     (is_div         ),
+    .div_res_sel(div_res_sel    ),
+    .div_es_go  (div_es_go      ),
+    .div_ms_go  (div_ms_go      ),
+    .div_finish (div_finish     ),
+    .mul_res_bus(es_mul_res_bus ),
+    .div_res_bus(es_div_res_bus )
     );
 
 assign store_data = es_store_op[2] ? {4{es_rkd_value[ 7:0]}} :  // b
                     es_store_op[1] ? {2{es_rkd_value[15:0]}} :  // h
                                         es_rkd_value[31:0];     // w
 
-assign data_sram_en    = ((|es_load_op) || es_mem_we) && es_valid;
-assign data_sram_wen   = store_cancel   ? 4'h0                               :
+assign data_sram_req   = ((|es_load_op) || es_mem_we) && es_valid && ~(wb_exc | wb_ertn | wb_exc_r | wb_ertn_r) && !es_addr_ok_r && ~ls_cancel;
+assign data_sram_wr    = es_mem_we && es_valid;
+assign data_sram_size  = es_store_op[1] ? 2'h1     : // h
+                         es_store_op[0] ? 2'h2 : 2'h0;   
+assign data_sram_wstrb = ~data_sram_wr   ? 4'h0                               :
                          es_store_op[2] ? (4'h1 <<  es_alu_result[1:0])      : // b
                          es_store_op[1] ? (4'h3 << {es_alu_result[1], 1'b0}) : // h
                          es_store_op[0] ? 4'hf : 4'h0;                         // w
 
-assign data_sram_addr  = {es_alu_result[31:2], 2'b0};
+assign data_sram_addr  = es_alu_result;
 assign data_sram_wdata = store_data;
 
 assign es_fwd_blk_bus = {
     es_gr_we & es_valid,
-    ((|es_load_op) | es_res_from_mul) & es_valid,
+    ((|es_load_op) | es_res_from_mul | es_res_from_div) & es_valid,
     es_dest,
     es_result};
 
-assign store_cancel = wb_exc | wb_ertn | ms_to_es_st_cancel | (|es_exc_flgs);
+assign ls_cancel = (wb_exc | wb_ertn | wb_exc_r | wb_ertn_r) | ms_to_es_ls_cancel | (|es_exc_flgs);
 
 assign es_result = es_csr_re ? es_csr_rdata :
                                es_alu_result;
