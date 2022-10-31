@@ -3,17 +3,26 @@ module mycpu_top(
     input  wire        clk,
     input  wire        resetn,
     // inst sram interface
-    output wire        inst_sram_we,
-    output wire        inst_sram_en,
-    output wire [31:0] inst_sram_addr,
-    output wire [31:0] inst_sram_wdata,
-    input  wire [31:0] inst_sram_rdata,
+    output        inst_sram_req,
+    output        inst_sram_wr,
+    output [ 1:0] inst_sram_size,
+    output [31:0] inst_sram_addr,
+    output [ 3:0] inst_sram_wstrb,
+    output [31:0] inst_sram_wdata,
+    input         inst_sram_addr_ok,
+    input         inst_sram_data_ok,
+    input  [31:0] inst_sram_rdata,
+
     // data sram interface
-    output wire        data_sram_en,
-    output wire [ 3:0] data_sram_we,
-    output wire [31:0] data_sram_addr,
-    output wire [31:0] data_sram_wdata,
-    input  wire [31:0] data_sram_rdata,
+    output        data_sram_req,
+    output        data_sram_wr,
+    output [ 1:0] data_sram_size,
+    output [31:0] data_sram_addr,
+    output [ 3:0] data_sram_wstrb,
+    output [31:0] data_sram_wdata,
+    input         data_sram_addr_ok,
+    input         data_sram_data_ok,
+    input  [31:0] data_sram_rdata,
     // trace debug interface
     output wire [31:0] debug_wb_pc,
     output wire [ 3:0] debug_wb_rf_we,
@@ -21,9 +30,15 @@ module mycpu_top(
     output wire [31:0] debug_wb_rf_wdata
 );
     wire reset=~resetn;
+    wire         fs_block;
+    wire         fs_allowin;
     wire ds_allowin;
+
+    wire         pfs_to_fs_valid;
+    wire [`PFS_TO_FS_BUS_WD - 1:0] pfs_to_fs_bus;
+
     wire fs_to_ds_valid;
-    wire [32:0] ds_to_fs_bus;
+    wire [`BR_BUS_WD-1:0] br_bus;
     wire [`FS_TO_DS_BUS_WD-1:0] fs_to_ds_bus;
 
     wire [6:0] es_block_bus;
@@ -57,21 +72,56 @@ module mycpu_top(
     wire [`MS_CSR_BLK_BUS_WD-1:0] ms_csr_blk_bus;
     wire [`WS_CSR_BLK_BUS_WD-1:0] ws_csr_blk_bus;
 
-    wire ms_to_es_st_cancel;
+    wire ms_to_es_ls_cancel;
+
+//PRE_IF stage
+preIF my_preIF(
+    .clk            (clk            ),
+    .reset          (reset          ),
+    //allowin
+    .fs_allowin     (fs_allowin     ),    
+    .fs_block (fs_block ),
+    //outputs
+    .pfs_to_fs_bus  (pfs_to_fs_bus  ),
+    .pfs_to_fs_valid(pfs_to_fs_valid),    
+    //brbus
+    .br_bus         (br_bus         ),
+    // inst sram interface
+    .inst_sram_req  (inst_sram_req  ),
+    .inst_sram_wr   (inst_sram_wr   ),
+    .inst_sram_size (inst_sram_size ),
+    .inst_sram_wstrb(inst_sram_wstrb),
+    .inst_sram_addr (inst_sram_addr ),
+    .inst_sram_wdata(inst_sram_wdata),
+    .inst_sram_addr_ok(inst_sram_addr_ok),
+    .inst_sram_data_ok(inst_sram_data_ok),
+    .inst_sram_rdata(inst_sram_rdata),
+
+    .wb_exc         (wb_exc         ),
+    .wb_ertn        (wb_ertn        ),
+    .exc_entry      (exc_entry      ),
+    .exc_retaddr    (exc_retaddr    )
+);
+
+
 IF my_IF(
         .clk(clk),
         .reset(reset),
         .ds_allowin(ds_allowin),
         .fs_to_ds_valid(fs_to_ds_valid),
-        .ds_to_fs_bus(ds_to_fs_bus),
         .fs_to_ds_bus(fs_to_ds_bus),
-        .inst_sram_en(inst_sram_en),
-        .inst_sram_addr(inst_sram_addr),
-        .inst_sram_rdata(inst_sram_rdata),
+        .br_bus(br_bus),
+        .pfs_to_fs_valid(pfs_to_fs_valid),  
+        .pfs_to_fs_bus  (pfs_to_fs_bus  ),
+        //outputs
+        .fs_allowin     (fs_allowin     ),
+        .fs_block  (fs_block ),
+        // inst sram interface
+        .inst_sram_addr_ok(inst_sram_addr_ok),
+        .inst_sram_data_ok(inst_sram_data_ok),
+        .inst_sram_rdata  (inst_sram_rdata  ),
         .wb_exc         (wb_exc         ),
-        .wb_ertn        (wb_ertn        ),
-        .exc_entry      (exc_entry      ),
-        .exc_retaddr    (exc_retaddr    )
+        .wb_ertn        (wb_ertn        )
     );
     assign inst_sram_we = 1'b0;
     assign inst_sram_wdata = 32'h0;
@@ -86,7 +136,7 @@ ID my_ID(
         .ds_allowin(ds_allowin),
         .fs_to_ds_valid(fs_to_ds_valid),
         .fs_to_ds_bus(fs_to_ds_bus),
-        .ds_to_fs_bus(ds_to_fs_bus),
+        .br_bus(br_bus),
         .es_allowin(es_allowin),
         .ds_to_es_valid(ds_to_es_valid),
         .ds_to_es_bus(ds_to_es_bus),
@@ -120,15 +170,20 @@ EXE my_EXE(
         .es_to_ms_valid(es_to_ms_valid),
         .es_to_ms_bus(es_to_ms_bus),
         .ms_allowin(ms_allowin),
-        .data_sram_en(data_sram_en),
-        .data_sram_we(data_sram_we),
-        .data_sram_addr(data_sram_addr),
-        .data_sram_wdata(data_sram_wdata),
+        // data sram interface
+        .data_sram_req    (data_sram_req    ),
+        .data_sram_wr     (data_sram_wr     ),
+        .data_sram_size   (data_sram_size   ),
+        .data_sram_addr   (data_sram_addr   ),
+        .data_sram_wstrb  (data_sram_wstrb  ),
+        .data_sram_wdata  (data_sram_wdata  ),
+        .data_sram_addr_ok(data_sram_addr_ok),
+
         .es_block_bus(es_block_bus),
         .es_forward(es_forward),
         .wb_exc         (wb_exc         ),
         .wb_ertn        (wb_ertn        ),
-        .ms_to_es_st_cancel(ms_to_es_st_cancel),
+        .ms_to_es_ls_cancel(ms_to_es_ls_cancel),
 
         .es_csr_blk_bus (es_csr_blk_bus )
     );
@@ -145,13 +200,13 @@ MEM my_MEM(
         .ms_to_ws_valid(ms_to_ws_valid),
         .ms_to_ws_bus(ms_to_ws_bus),
         .ws_allowin(ws_allowin),
+        .data_sram_data_ok(data_sram_data_ok),
         .data_sram_rdata(data_sram_rdata),
         .ms_block_bus(ms_block_bus),
         .ms_forward(ms_forward),
-        
         .wb_exc         (wb_exc         ),
         .wb_ertn        (wb_ertn        ),
-        .ms_to_es_st_cancel(ms_to_es_st_cancel),
+        .ms_to_es_ls_cancel(ms_to_es_ls_cancel),
         .ms_csr_blk_bus (ms_csr_blk_bus )
     );
 

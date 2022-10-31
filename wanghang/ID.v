@@ -7,7 +7,7 @@ module ID (
     output          ds_allowin,
     input           fs_to_ds_valid,
     input   [`FS_TO_DS_BUS_WD-1:0]  fs_to_ds_bus,
-    output  [32:0]  ds_to_fs_bus,
+    output  [`BR_BUS_WD      -1:0] br_bus,
     input           es_allowin,
     output          ds_to_es_valid,
     output  [`DS_TO_ES_BUS_WD-1:0] ds_to_es_bus,
@@ -31,9 +31,11 @@ module ID (
     input [`MS_CSR_BLK_BUS_WD-1:0] ms_csr_blk_bus,
     input [`WS_CSR_BLK_BUS_WD-1:0] ws_csr_blk_bus
 );
+reg wb_exc_r;
+reg wb_ertn_r;
 reg ds_valid;
 wire ds_ready_go;
-reg [`DS_TO_ES_BUS_WD-1:0] IDreg;
+reg [`FS_TO_DS_BUS_WD-1:0] IDreg;
 wire [`EXC_NUM - 1:0] fs_to_ds_exc_flags;
 wire [31:0] ds_pc;
 wire [31:0] ds_inst;
@@ -52,6 +54,7 @@ wire ms_we;
 wire [4:0] ms_dest;
 wire ws_we;
 wire [4:0] ws_dest;
+wire csr_blk;
 
 wire [ 5:0] op_31_26;
 wire [ 3:0] op_25_22;
@@ -160,8 +163,12 @@ wire [4:0]  dest;
 wire [31:0] imm;
 wire [31:0] rj_value;
 wire [31:0] rkd_value;
+
 wire [31:0] br_offs;
-wire [31:0] brch_addr;
+wire br_stall;
+wire br_taken;
+wire [31:0]  brch_addr;
+
 wire [4:0]  ld_type;
 wire [2:0]  st_type; 
 wire [`EXC_NUM - 1:0] ds_exc_flags;
@@ -197,9 +204,10 @@ assign ws_block1 = ws_we & ws_dest!=0 & ((ws_dest==rf_raddr1)&src_addr1);
 assign ws_block2 = ws_we & ws_dest!=0 & ((ws_dest==rf_raddr2)&src_addr2);
 
 // interaction
-assign ds_ready_go= ~(es_blk  & (es_block1 | es_block2) | csr_blk);//in case of load
-assign ds_allowin=ds_ready_go&es_allowin|~ds_valid;
-assign ds_to_es_valid=ds_ready_go&ds_valid;
+assign ds_ready_go = !(es_blk  && (es_block1 || es_block2) || csr_blk) ;//in case of load
+assign ds_allowin = ds_ready_go && es_allowin || !ds_valid;
+assign ds_to_es_valid = ds_ready_go && ds_valid ;
+
 always @(posedge clk) begin
     if(reset)begin
         ds_valid<=1'b0;
@@ -207,22 +215,41 @@ always @(posedge clk) begin
     else if(br_taken)begin
         ds_valid<=1'b0;
     end
-    else if(wb_exc | wb_ertn) begin
-        ds_valid<=1'b0;
-    end
     else if(ds_allowin)begin
         ds_valid<=fs_to_ds_valid;
     end
 end
 
-//data
-always @(posedge clk) begin
-    if (fs_to_ds_valid&ds_allowin) begin
-        IDreg<=fs_to_ds_bus;
+// data
+always @(posedge clk) begin 
+    if(reset) begin
+        IDreg <= `FS_TO_DS_BUS_WD'b0;
+    end
+    if (fs_to_ds_valid && ds_allowin) begin
+        IDreg <= fs_to_ds_bus;
     end
 end
-assign {fs_to_ds_exc_flags,ds_pc,ds_inst}=IDreg;
-assign ds_to_fs_bus={br_taken,brch_addr};
+assign {fs_to_ds_exc_flags,ds_pc,ds_inst} = IDreg;
+
+always @(posedge clk) begin
+    if (reset) begin
+        wb_exc_r <= 1'b0;
+        wb_ertn_r <= 1'b0;
+    end else if (wb_exc) begin
+        wb_exc_r <= 1'b1;
+    end else if (wb_ertn) begin
+        wb_ertn_r <= 1'b1;
+    end else if (ds_valid & ds_ready_go & es_allowin)begin
+        wb_exc_r <= 1'b0;
+        wb_ertn_r <= 1'b0;
+    end
+end
+
+assign br_stall = (inst_beq || inst_bne || inst_blt || inst_bge || inst_bltu || inst_bgeu || inst_bl || inst_jirl || inst_b) & !ds_ready_go;
+assign br_bus       = {br_taken,       // 33
+                       br_stall,       // 32
+                       brch_addr};     // 31:0
+
 assign ds_to_es_bus={   ds_rdcn_en  ,  //283
                         ds_rdcn_sel ,  //282
                         ds_csr_we   ,  //281
@@ -381,7 +408,7 @@ assign br_offs = need_si26 ? {{ 4{i26[25]}}, i26[25:0], 2'b0} :
 
 assign jirl_offs = {{14{i16[15]}}, i16[15:0], 2'b0};
 
-assign src_reg_is_rd = inst_beq | inst_bne | inst_blt |inst_bge | inst_bltu | inst_bgeu | (|st_type) | inst_csrwr | inst_csrxchg;;
+assign src_reg_is_rd = inst_beq | inst_bne | inst_blt |inst_bge | inst_bltu | inst_bgeu | (|st_type) | inst_csrwr | inst_csrxchg;
 
 assign src1_is_pc    = inst_jirl | inst_bl | inst_pcaddu12i;
  
@@ -499,7 +526,7 @@ wire        ws_csr_we;
 wire        ws_eret;
 wire [13:0] ws_csr_wnum;
 
-wire csr_blk;
+
 wire es_csr_blk;
 wire ms_csr_blk;
 wire ws_csr_blk;

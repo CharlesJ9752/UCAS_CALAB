@@ -163,7 +163,7 @@ always @(posedge clk) begin
   end
 end
 
-mydiv signed_divider(
+my_div signed_divider(
   .aclk                   (clk),
   .s_axis_divisor_tdata   (alu_src2),
   .s_axis_dividend_tdata  (alu_src1),
@@ -174,7 +174,7 @@ mydiv signed_divider(
   .m_axis_dout_tdata      (div_result),
   .m_axis_dout_tvalid     (div_res_valid)
 );
-mydiv_u unsigned_divider(
+my_divu unsigned_divider(
   .aclk                   (clk),
   .s_axis_divisor_tdata   (alu_src2),
   .s_axis_dividend_tdata  (alu_src1),

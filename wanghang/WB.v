@@ -31,6 +31,10 @@ module WB (
     //csr blk
     output  [15:0]  ws_csr_blk_bus
 );
+
+    reg        wb_exc_r;
+    reg        wb_ertn_r;
+
     reg [`MS_TO_WS_BUS_WD -1:0] WBreg;
     reg ws_valid;
     wire ws_ready_go;
@@ -52,12 +56,9 @@ module WB (
     //contact
     assign ws_ready_go=1'b1;
     assign ws_allowin = ws_ready_go|~ws_valid;
-    always @(posedge clk ) begin
+    always @(posedge clk) begin
         if(reset)begin
             ws_valid<=1'b0;
-        end
-        else if (wb_exc | ertn_flush) begin
-            ws_valid <= 1'b0;
         end
         else if(ws_allowin) begin
             ws_valid<=ms_to_ws_valid;
@@ -70,12 +71,27 @@ module WB (
             WBreg<=ms_to_ws_bus;
         end
     end
+
+    always @(posedge clk) begin
+    if (reset) begin
+        wb_exc_r <= 1'b0;
+        wb_ertn_r <= 1'b0;
+    end else if (wb_exc) begin
+        wb_exc_r <= 1'b1;
+    end else if (ertn_flush) begin
+        wb_ertn_r <= 1'b1;
+    end else if (ms_to_ws_valid & ws_allowin)begin
+        wb_exc_r <= 1'b0;
+        wb_ertn_r <= 1'b0;
+    end
+end
+
     assign {ws_csr_we,ws_csr_wnum,ws_csr_wmask,ws_csr_wvalue,ws_inst_ertn,ws_exc_flags,gr_we,ws_pc,final_result,dest} = WBreg;
     assign ws_to_ds_bus = {rf_we,rf_waddr,rf_wdata};
     assign ws_block_bus = {rf_we&ws_valid,dest};
     assign ws_forward = rf_wdata;
 
-    assign rf_we = gr_we & ws_valid & ~wb_exc;
+    assign rf_we    = gr_we & ws_valid & ~(wb_exc | ertn_flush | wb_ertn_r | wb_exc_r);
     assign rf_waddr = dest;
     assign rf_wdata = final_result;
 

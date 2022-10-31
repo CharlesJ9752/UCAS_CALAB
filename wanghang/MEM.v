@@ -10,19 +10,25 @@ module MEM (
     output          ms_to_ws_valid,
     output  [`MS_TO_WS_BUS_WD-1:0]  ms_to_ws_bus,
     input           ws_allowin,
+    input           data_sram_data_ok,
     input   [31:0]  data_sram_rdata,
     output  [5:0]   ms_block_bus,
     output  [31:0]  ms_forward,
+    
     // EXEC & INT
     input  wb_exc,
     input  wb_ertn,
-    output ms_to_es_st_cancel,
+    output ms_to_es_ls_cancel,
     output [`MS_CSR_BLK_BUS_WD-1:0] ms_csr_blk_bus
 );
+
+    reg        wb_exc_r;
+    reg        wb_ertn_r;
     reg [`ES_TO_MS_BUS_WD-1:0] MEMreg;
     reg ms_valid;
     wire ms_ready_go;
     wire gr_we;
+    wire mem_we;
     wire [31:0] ms_pc;
     wire res_from_mem;
     wire [31:0] alu_result;
@@ -54,15 +60,16 @@ module MEM (
     wire [31:0] ms_csr_wdata;
     wire        ms_inst_ertn;
 
+    wire ls_cancel;
+
     //contact
-    assign ms_ready_go = 1'b1;
-    assign ms_allowin = ms_ready_go&ws_allowin|~ms_valid;
-    assign ms_to_ws_valid = ms_valid & ms_ready_go;
+    assign ms_ready_go    = (|(ld_type) || mem_we) ? (data_sram_data_ok | (|ms_exc_flags) | ls_cancel) : 1'b1;
+    assign ms_allowin = ms_ready_go & ws_allowin | ~ms_valid;
+    assign ms_to_ws_valid = ms_valid & ms_ready_go & (~(wb_exc | wb_ertn | wb_exc_r | wb_ertn_r));
+
     always @(posedge clk) begin
         if(reset)begin
             ms_valid<=1'b0;
-        end else if (wb_exc | wb_ertn) begin
-            ms_valid <= 1'b0;
         end
         else if (ms_allowin) begin
             ms_valid<=es_to_ms_valid;
@@ -72,16 +79,33 @@ module MEM (
     //data 
     always @(posedge clk ) begin
         if (ms_allowin&es_to_ms_valid) begin
-            MEMreg<=es_to_ms_bus;
+            MEMreg <= es_to_ms_bus;
         end
     end
+
+    always @(posedge clk) begin
+    if (reset) begin
+        wb_exc_r <= 1'b0;
+        wb_ertn_r <= 1'b0;
+    end else if (wb_exc) begin
+        wb_exc_r <= 1'b1;
+    end else if (wb_ertn) begin
+        wb_ertn_r <= 1'b1;
+    end else if (es_to_ms_valid & ms_allowin)begin
+        wb_exc_r <= 1'b0;
+        wb_ertn_r <= 1'b0;
+    end
+end
+
     assign {ms_csr_we,
             ms_csr_wnum,
             ms_csr_wmask,
             ms_csr_wdata,
             ms_inst_ertn,
             es_to_ms_exc_flags,
+            ls_cancel      ,
             ld_type,
+            mem_we,
             gr_we,
             ms_pc,
             res_from_mem,
@@ -122,15 +146,16 @@ module MEM (
                          {32{sel_mem_res[2]}} & {{24{mem_res_23}}, data_sram_rdata[23:16]} |
                          {32{sel_mem_res[3]}} & {{24{mem_res_31}}, data_sram_rdata[31:24]};
 
-    //mem_result
+    //mem_result,loadresult
     assign mem_result = {32{ms_ld_h | ms_ld_hu}} & mem_res_lhg | // LH/LHU
                         {32{ms_ld_b | ms_ld_bu}} & mem_res_lbg | // LB/LBU
                         {32{ms_ld_w}} & data_sram_rdata; // LW
 
     assign final_result = ms_exc_flags[`EXC_FLG_ALE] ? alu_result :
                           res_from_mem ? mem_result : alu_result;
-    assign ms_to_es_st_cancel = ((|ms_exc_flags) | ms_inst_ertn) & ms_valid;
     assign ms_csr_blk_bus     = {ms_csr_we & ms_valid, ms_inst_ertn & ms_valid, ms_csr_wnum};
+    
+    assign ms_to_es_ls_cancel = ((|ms_exc_flags) | ms_inst_ertn) & ms_valid;
 
     assign ms_exc_flags = es_to_ms_exc_flags;
 endmodule
