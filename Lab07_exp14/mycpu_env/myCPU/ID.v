@@ -80,16 +80,13 @@ module ID (
 //控制信号的赋值
     assign id_ready_go = ~csr_blk & ~( exe_en_block & ((exe_dest==rf_raddr1) & addr1_valid //untest
                                     |(exe_dest==rf_raddr2) & addr2_valid));//in case of load
-    assign id_exe_valid = id_ready_go & id_valid;
-    assign id_allowin = id_ready_go & exe_allowin | ~id_valid;
+    assign id_exe_valid = id_ready_go && id_valid;
+    assign id_allowin = id_ready_go && exe_allowin || ~id_valid;
     always @(posedge clk ) begin
         if(~resetn) begin
             id_valid <= 1'b0;
         end
-        else if(en_brch_cancel) begin
-            id_valid <= 1'b0;
-        end
-        else if (wb_exc | ertn_flush) begin    //untest
+        else if(br_taken) begin
             id_valid <= 1'b0;
         end
         else if(id_allowin) begin
@@ -102,8 +99,9 @@ module ID (
             if_id_bus_vld <= if_id_bus;
         end
     end
+    wire    [5:0]   if_exc_type;
     assign {
-        id_pc, id_inst
+        if_exc_type, id_pc, id_inst
     } = if_id_bus_vld;
     assign id_exe_bus = {
         id_rdcn, inst_rdcntvh_w, //lzc: new added
@@ -398,12 +396,13 @@ module ID (
                     || inst_jirl
                     || inst_bl
                     || inst_b
-    ) & id_valid;
-    assign en_brch_cancel = id_en_brch & id_ready_go;
+    ) & id_valid & id_ready_go;//jyh1031
+    assign br_taken = id_en_brch;//jyh1031
+    assign br_stall = (inst_beq || inst_bne || inst_blt || inst_bge || inst_bltu || inst_bgeu || inst_bl || inst_jirl || inst_b) & ~id_ready_go;
     assign id_brch_addr = (inst_beq || inst_bne || inst_bl || inst_b || inst_blt || inst_bge || inst_bltu || inst_bgeu) 
     ? (id_pc + br_offs) :    /*inst_jirl*/ (rj_value + jirl_offs);                     // change 9
     assign id_if_bus = {
-        en_brch_cancel, id_brch_addr
+        br_taken,br_stall, id_brch_addr
     };
     assign id_alu_src1 = src1_is_pc  ? id_pc : rj_value;
     assign id_alu_src2 = src2_is_imm ? imm : id_rkd_value;
@@ -488,7 +487,7 @@ module ID (
 //中断和异常标志
     /**new added**/
     assign  id_exc_type[`TYPE_SYS]=inst_syscall;
-    assign  id_exc_type[`TYPE_ADEF]=|id_pc[1:0];
+    assign  id_exc_type[`TYPE_ADEF]=if_exc_type[`TYPE_ADEF];
     assign  id_exc_type[`TYPE_ALE]=1'b0;
     assign  id_exc_type[`TYPE_BRK]=inst_break;
     assign  id_exc_type[`TYPE_INE]=~(id_exc_type[`TYPE_ADEF]) & ~(inst_add_w | inst_sub_w | inst_slt | inst_sltu | 
@@ -500,5 +499,6 @@ module ID (
     inst_rdcntid_w | inst_rdcntvl_w | inst_rdcntvh_w | inst_mod_w | inst_mod_wu | inst_div_w | inst_div_wu);
     assign  id_exc_type[`TYPE_INT]=csr_has_int;
     /**new added**/
+//add
 
 endmodule

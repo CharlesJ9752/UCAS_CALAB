@@ -13,6 +13,7 @@ module MEM (
     output  [`MEM_WB_BUS_WDTH - 1:0]        mem_wb_bus,
     //与数据存储器
     input   [ 31:0]                         data_sram_rdata,
+    input                                   data_sram_data_ok,
     //写信号
     output  [`MEM_WR_BUS_WDTH - 1:0]        mem_wr_bus,
     output                                  mem_exc,
@@ -20,7 +21,8 @@ module MEM (
     //中断和异常信号
     input                                   wb_exc,
     input                                   ertn_flush,
-    output                                  mem_ertn         
+    output                                  mem_ertn        ,
+    output                                  mem_to_exe_ldst_cancel 
 );
 //信号定义
     //控制信号
@@ -48,14 +50,14 @@ module MEM (
     //中断和异常标志
     wire    [`NUM_TYPES - 1:0]               exe_exc_type;
     wire    [`NUM_TYPES - 1:0]               mem_exc_type;
+    wire                                    ls_cancel;
+    wire                                    mem_we;
 //控制信号的赋值
-    assign  mem_ready_go = 1'b1;
-    assign  mem_wb_valid = mem_ready_go & mem_valid;
+    assign  mem_ready_go = (is_load | mem_we) ? (data_sram_data_ok | (|mem_exc_type) | ls_cancel) : 1'b1;
+    assign  mem_wb_valid = mem_ready_go & mem_valid &  (~(wb_exc | ertn_flush | wb_exc_reg | ertn_flush_reg));
     assign  mem_allowin = mem_ready_go & wb_allowin | ~mem_valid;
     always @(posedge clk ) begin
         if (~resetn) begin
-            mem_valid <= 1'b0;
-        end else if (wb_exc | ertn_flush) begin
             mem_valid <= 1'b0;
         end else if(mem_allowin) begin
             mem_valid <= exe_mem_valid;
@@ -70,7 +72,7 @@ module MEM (
     assign {mem_csr_we,mem_csr_waddr,mem_csr_wmask,
          mem_csr_wdata,mem_inst_ertn,exe_exc_type,
         mem_gr_we, res_from_mem, mem_dest,
-        mem_pc, mem_inst, exe_to_mem_result
+        mem_pc, mem_inst, exe_to_mem_result,ls_cancel,mem_we
     } = exe_mem_bus_vld;
     assign  mem_wb_bus = {mem_csr_we,mem_csr_waddr,
         mem_csr_wmask,mem_csr_wdata,mem_inst_ertn,mem_exc_type,
@@ -82,6 +84,7 @@ module MEM (
     assign inst_ld_bu = mem_inst[31:22] == 10'b0010101000;
     assign inst_ld_hu = mem_inst[31:22] == 10'b0010101001;
     assign inst_ld_w = mem_inst[31:22] == 10'b0010100010;
+    assign is_load = inst_ld_b | inst_ld_bu | inst_ld_h |inst_ld_hu |inst_ld_w;
     wire    [ 1:0]  vaddr;
     wire    [31:0]  word;
     wire    [15:0]  half;
@@ -114,4 +117,21 @@ module MEM (
 //中断和异常标志
     assign mem_exc_type = exe_exc_type;
     assign mem_ertn = mem_valid & mem_inst_ertn;
+//add
+    assign mem_to_exe_ldst_cancel = ((|mem_exc_type) | mem_inst_ertn) & mem_valid;
+    reg     wb_exc_reg;
+    reg     ertn_flush_reg;
+    always @(posedge clk) begin
+    if (~resetn) begin
+        wb_exc_reg <= 1'b0;
+        ertn_flush_reg <= 1'b0;
+    end else if (wb_exc) begin
+        wb_exc_reg <= 1'b1;
+    end else if (ertn_flush) begin
+        ertn_flush_reg <= 1'b1;
+    end else if (exe_mem_valid & mem_allowin)begin
+        wb_exc_reg <= 1'b0;
+        ertn_flush_reg <= 1'b0;
+    end
+end
 endmodule

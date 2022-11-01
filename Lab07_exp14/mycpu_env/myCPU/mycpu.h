@@ -1,10 +1,10 @@
 `ifndef MYCPU_H
     //buses
-    `define IF_ID_BUS_WDTH 64
-    `define ID_IF_BUS_WDTH 33
+    `define IF_ID_BUS_WDTH 70
+    `define ID_IF_BUS_WDTH 34
     `define ID_EXE_BUS_WDTH 308   //lzc: add 2 bits for [ds_rdcn_en] and [ds_rdcn_sel]
     `define WB_ID_BUS_WDTH 38
-    `define EXE_MEM_BUS_WDTH 189
+    `define EXE_MEM_BUS_WDTH 191
     `define MEM_WB_BUS_WDTH 188
     `define EXE_WR_BUS_WDTH 39
     `define MEM_WR_BUS_WDTH 38

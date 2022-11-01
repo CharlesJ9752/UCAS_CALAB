@@ -53,9 +53,6 @@ module WB (
         if (~resetn) begin
             wb_valid <= 1'b0;
         end
-        else if (wb_exc | ertn_flush) begin
-            wb_valid <= 1'b0;
-        end
         else if (wb_allowin) begin
             wb_valid <= mem_wb_valid;
         end
@@ -71,7 +68,7 @@ module WB (
         wb_gr_we, wb_pc, wb_inst, wb_final_result, wb_dest
     } = mem_wb_bus_vld;
 //写数据
-    assign  rf_we = wb_valid & wb_gr_we & ~wb_exc; 
+    assign  rf_we = wb_valid & wb_gr_we & ~(wb_exc| ertn_flush | ertn_flush_reg | wb_exc_reg); 
     assign  rf_waddr = wb_dest; 
     assign  rf_wdata = wb_final_result;
     assign  wb_id_bus = {
@@ -110,5 +107,20 @@ module WB (
 //badvaddr
 assign wb_badvaddr = wb_final_result;
 /**new added**/
-
+//add
+    reg wb_exc_reg;
+    reg ertn_flush_reg;
+    always @(posedge clk) begin
+    if (~resetn) begin
+        wb_exc_reg <= 1'b0;
+        ertn_flush_reg <= 1'b0;
+    end else if (wb_exc) begin
+        wb_exc_reg <= 1'b1;
+    end else if (ertn_flush) begin
+        ertn_flush_reg <= 1'b1;
+    end else if (mem_wb_valid & wb_allowin)begin
+        wb_exc_reg <= 1'b0;
+        ertn_flush_reg <= 1'b0;
+    end
+end
 endmodule

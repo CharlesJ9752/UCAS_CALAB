@@ -12,10 +12,13 @@ module EXE (
     input                                   mem_allowin,
     output  [`EXE_MEM_BUS_WDTH - 1:0]       exe_mem_bus,
     //与数据存储器
-    output                                  data_sram_en,
-    output  [ 3:0]                          data_sram_we,
-    output  [31:0]                          data_sram_addr,
-    output  [31:0]                          data_sram_wdata,
+    output                                  data_sram_req  ,
+    output                                  data_sram_wr   ,
+    output [ 1:0]                           data_sram_size ,
+    output [31:0]                           data_sram_addr ,
+    output [ 3:0]                           data_sram_wstrb,
+    output [31:0]                           data_sram_wdata,
+    input                                   data_sram_addr_ok,
     //写信�??
     output  [`EXE_WR_BUS_WDTH - 1:0]        exe_wr_bus,
     //csr信号
@@ -24,7 +27,8 @@ module EXE (
     input                                   wb_exc,
     input                                   ertn_flush,
     input                                   mem_exc,
-    input                                   mem_ertn
+    input                                   mem_ertn,
+    input                                   mem_to_exe_ldst_cancel
 );
 //信号定义
     //控制信号
@@ -67,16 +71,14 @@ module EXE (
 
 
     //控制信号的赋值
-    assign exe_ready_go    = (alu_op[15] | alu_op[17]) & div_out_tvalid | 
+    assign exe_ready_go    = (is_load || exe_mem_we)? (((data_sram_req & data_sram_addr_ok) | ls_cancel) || exe_sram_addr_ok_reg) : 
+                             ((alu_op[15] | alu_op[17]) & div_out_tvalid | 
                              (alu_op[16] | alu_op[18]) & divu_out_tvalid |
-                             (~(alu_op[15]|alu_op[16]|alu_op[17]|alu_op[18]));
-    assign  exe_mem_valid = exe_ready_go & exe_valid;
+                             (~(alu_op[15]|alu_op[16]|alu_op[17]|alu_op[18])));
+    assign  exe_mem_valid = exe_ready_go & exe_valid & (~(wb_exc | ertn_flush | wb_exc_reg | ertn_flush_reg));
     assign  exe_allowin = exe_ready_go & mem_allowin | ~exe_valid;
     always @(posedge clk ) begin
         if (~resetn) begin
-            exe_valid <= 1'b0;
-        end
-        else if (wb_exc | ertn_flush) begin
             exe_valid <= 1'b0;
         end else  if(exe_allowin) begin
             exe_valid <= id_exe_valid;
@@ -96,10 +98,11 @@ module EXE (
         alu_op, alu_src1, alu_src2,
         exe_dest, exe_rkd_value, exe_inst, exe_pc
     }=id_exe_bus_vld;
-    assign  exe_mem_bus = {exe_csr_we,exe_csr_waddr,exe_csr_wmask,
-         exe_csr_wdata,exe_inst_ertn,exe_exc_type,
+    assign  exe_mem_bus = {
+        exe_csr_we,exe_csr_waddr,exe_csr_wmask,
+        exe_csr_wdata,exe_inst_ertn,exe_exc_type,
         exe_gr_we, exe_res_from_mem, exe_dest,
-        exe_pc, exe_inst, exe_result
+        exe_pc, exe_inst, exe_result, ls_cancel, exe_mem_we
     };
 //运行alu
     //alu
@@ -263,6 +266,7 @@ module EXE (
     wire    [ 1:0]  vaddr;
     wire    [ 3:0]  strb;
     wire    [31:0]  wr_data;
+    wire            ls_cancel;
     
     assign  vaddr   =   alu_result[1:0];
     assign  strb    =   {4{inst_st_w}} & 4'b1111 |
@@ -271,17 +275,17 @@ module EXE (
     assign  wr_data =   {32{inst_st_w}} & exe_rkd_value |
                         {32{inst_st_h}} & {2{exe_rkd_value[15:0]}} |
                         {32{inst_st_b}} & {4{exe_rkd_value[7:0]}};
-    assign  find_exc_ertn =wb_exc | mem_exc | exe_exc | ertn_flush | mem_ertn | exe_ertn;
+    assign  ls_cancel   = (wb_exc | ertn_flush | wb_exc_reg | ertn_flush_reg) | mem_to_exe_ldst_cancel | (|exe_exc_type);
+    assign  data_sram_req = (is_load || exe_mem_we) && exe_valid && ~(wb_exc | ertn_flush | wb_exc_reg | ertn_flush_reg) && ~exe_sram_addr_ok_reg && ~ls_cancel;
+    assign  data_sram_wr = exe_valid & exe_mem_we;
 
-    assign  data_sram_en = ~find_exc_ertn;
-    assign  data_sram_we = {4{exe_mem_we}} & strb;
-    assign  data_sram_addr = {alu_result[31:2],2'b00}; //assign  data_sram_addr = {alu_result};
+    assign  data_sram_wstrb = inst_st_b ? (4'h1 <<  alu_result[1:0]) :
+                             inst_st_h ? (4'h3 << {alu_result[1], 1'b0}) :
+                             inst_st_w ? 4'hf : 4'h0;
+    assign data_sram_size  = inst_st_h ? 2'h1 : 
+                             inst_st_w ? 2'h2 : 2'h0;                
+    assign  data_sram_addr = alu_result; //assign  data_sram_addr = {alu_result};
     assign  data_sram_wdata = wr_data;
-    assign  exe_mem_bus = {exe_csr_we,exe_csr_waddr,exe_csr_wmask,
-         exe_csr_wdata,exe_inst_ertn,exe_exc_type,
-        exe_gr_we, exe_res_from_mem, exe_dest,
-        exe_pc, exe_inst, exe_result
-    };
 /**new added**/
 //counter
 reg [63:0] countor;
@@ -301,4 +305,32 @@ end
                             alu_op[16] ? divu_res_hi :
                             alu_op[18] ? divu_res_lo :
                                          alu_result;
+//add, exp14
+reg exe_sram_addr_ok_reg;
+reg wb_exc_reg;
+reg ertn_flush_reg;
+wire is_load;
+assign is_load = inst_ld_b | inst_ld_h | inst_ld_bu | inst_ld_hu | inst_ld_w;
+always @(posedge clk) begin
+        if(~resetn) begin
+            exe_sram_addr_ok_reg <= 1'b0;
+        end else if(data_sram_addr_ok && data_sram_req && ~mem_allowin) begin
+            exe_sram_addr_ok_reg <= 1'b1;
+        end else if(mem_allowin) begin
+            exe_sram_addr_ok_reg <= 1'b0;
+        end
+    end
+    always @(posedge clk) begin
+        if (~resetn) begin
+            wb_exc_reg <= 1'b0;
+            ertn_flush_reg <= 1'b0;
+        end else if (wb_exc) begin
+            wb_exc_reg <= 1'b1;
+        end else if (ertn_flush) begin
+            ertn_flush_reg <= 1'b1;
+        end else if (id_exe_valid & exe_allowin)begin
+            wb_exc_reg <= 1'b0;
+            ertn_flush_reg <= 1'b0;
+        end 
+    end
 endmodule
